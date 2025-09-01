@@ -33,7 +33,7 @@ Thank you for your interest in contributing to the Ubuntu AutoInstall Agent! Thi
    ```bash
    # Ubuntu/Debian
    sudo apt install qemu-kvm libvirt-daemon-system libvirt-clients
-   
+
    # Add user to libvirt group
    sudo usermod -a -G libvirt $USER
    ```
@@ -120,7 +120,7 @@ cargo clippy --all-features
 
 ```rust
 //! Module documentation
-//! 
+//!
 //! This module handles [specific functionality].
 
 use anyhow::{Context, Result};
@@ -135,20 +135,20 @@ pub struct ExampleStruct {
 
 impl ExampleStruct {
     /// Constructor documentation
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `field` - Description of the field
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// let example = ExampleStruct::new("value".to_string());
     /// ```
     pub fn new(field: String) -> Self {
         Self { field }
     }
-    
+
     /// Method documentation
     pub async fn do_something(&self) -> Result<()> {
         // Implementation
@@ -159,13 +159,13 @@ impl ExampleStruct {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_new() {
         let example = ExampleStruct::new("test".to_string());
         assert_eq!(example.field, "test");
     }
-    
+
     #[tokio::test]
     async fn test_do_something() {
         let example = ExampleStruct::new("test".to_string());
@@ -196,7 +196,7 @@ Before starting development:
    ```bash
    # Write failing tests
    cargo test  # Should fail
-   
+
    # Implement feature
    # Run tests until they pass
    cargo test
@@ -325,7 +325,7 @@ impl TargetConfig {
         config.validate()?;
         Ok(config)
     }
-    
+
     fn validate(&self) -> Result<()> {
         // Validation logic
         Ok(())
@@ -379,7 +379,7 @@ Use `proptest` for complex property testing:
 mod property_tests {
     use super::*;
     use proptest::prelude::*;
-    
+
     proptest! {
         #[test]
         fn test_config_roundtrip(config in config_strategy()) {

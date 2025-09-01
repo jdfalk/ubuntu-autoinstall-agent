@@ -12,7 +12,7 @@ The Ubuntu AutoInstall Agent is a Rust-based utility that automates the deployme
 
 **Current Pain Points with Shell-Based Approach:**
 - Complex 500+ line shell scripts (`jinstall.sh`) prone to failures
-- Manual `debootstrap` operations with inconsistent results  
+- Manual `debootstrap` operations with inconsistent results
 - Embedded installation logic in YAML user-data files
 - No proper error recovery or rollback mechanisms
 - Difficult to test and validate before production deployment
@@ -69,13 +69,13 @@ The Ubuntu AutoInstall Agent is a Rust-based utility that automates the deployme
 
 ### Phase 1: Golden Image Creation
 ```
-VM Creation → Ubuntu Installation → Standard Configuration → 
+VM Creation → Ubuntu Installation → Standard Configuration →
 Generalization (OEM Mode) → Image Capture → Compression → Storage
 ```
 
 ### Phase 2: Target Deployment
 ```
-Netboot → LUKS Disk Setup → Image Download → Target Customization → 
+Netboot → LUKS Disk Setup → Image Download → Target Customization →
 Image Deployment → Bootloader Configuration → Validation
 ```
 
@@ -318,19 +318,19 @@ pub struct VmConfig {
 pub enum AutoInstallError {
     #[error("VM operation failed: {0}")]
     VmError(String),
-    
+
     #[error("Disk operation failed: {0}")]
     DiskError(String),
-    
+
     #[error("Network operation failed: {0}")]
     NetworkError(String),
-    
+
     #[error("LUKS operation failed: {0}")]
     LuksError(String),
-    
+
     #[error("Configuration error: {0}")]
     ConfigError(String),
-    
+
     #[error("Image operation failed: {0}")]
     ImageError(String),
 }

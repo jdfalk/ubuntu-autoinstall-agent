@@ -127,7 +127,7 @@ graph TD
     C --> D[System Configuration]
     D --> E[Image Generalization]
     E --> F[Image Storage]
-    
+
     G[Target Deployment] --> H[Netboot/SSH]
     H --> I[LUKS Disk Setup]
     I --> J[Image Download]

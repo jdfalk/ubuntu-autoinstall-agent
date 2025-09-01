@@ -16,7 +16,7 @@ This document provides step-by-step implementation instructions for the Ubuntu A
 
 **Key Requirements**:
 - Zero manual intervention (fully automated deployment)
-- Support both amd64 and arm64 architectures  
+- Support both amd64 and arm64 architectures
 - Full disk encryption (LUKS) by default
 - Golden image approach (build once, deploy many times)
 - Netboot/PXE ready for bare metal deployment
@@ -25,13 +25,13 @@ This document provides step-by-step implementation instructions for the Ubuntu A
 
 **Current System Problems Being Solved**:
 1. **Shell Script Fragility**: 500+ line `jinstall.sh` with complex error-prone operations
-2. **Debootstrap Unreliability**: Manual filesystem bootstrap that fails unpredictably  
+2. **Debootstrap Unreliability**: Manual filesystem bootstrap that fails unpredictably
 3. **No Status Reporting**: Silent failures with no feedback mechanism
 4. **Manual Recovery Required**: Failed deployments need complete restart
 5. **Testing Impossible**: Cannot validate without actual hardware deployment
 6. **Architecture Complexity**: Separate scripts for amd64/arm64 that duplicate logic
 
-**Migration Strategy**: 
+**Migration Strategy**:
 - Phase out existing shell scripts (`jinstall.sh`, `reporting.sh`)
 - Replace debootstrap operations with golden image deployment
 - Maintain compatibility with existing configuration patterns
@@ -98,7 +98,7 @@ repository = "https://github.com/jdfalk/ubuntu-autoinstall-agent"
 # CLI Framework
 clap = { version = "4.4", features = ["derive"] }
 
-# Async Runtime  
+# Async Runtime
 tokio = { version = "1.0", features = ["full"] }
 
 # Serialization
@@ -126,7 +126,7 @@ sha2 = "0.10"
 tempfile = "3.8"
 walkdir = "2.4"
 
-# System Operations  
+# System Operations
 nix = "0.27"
 
 # Progress Indicators
@@ -155,7 +155,7 @@ tempfile = "3.8"
 pub enum Architecture {
     #[serde(rename = "amd64")]
     Amd64,
-    #[serde(rename = "arm64")]  
+    #[serde(rename = "arm64")]
     Arm64,
 }
 
@@ -166,7 +166,7 @@ impl Architecture {
             Architecture::Arm64 => "arm64",
         }
     }
-    
+
     pub fn qemu_arch(&self) -> &'static str {
         match self {
             Architecture::Amd64 => "x86_64",
@@ -187,34 +187,34 @@ use thiserror::Error;
 pub enum AutoInstallError {
     #[error("VM operation failed: {0}")]
     VmError(String),
-    
+
     #[error("Disk operation failed: {0}")]
     DiskError(String),
-    
+
     #[error("Network operation failed: {0}")]
     NetworkError(String),
-    
+
     #[error("LUKS operation failed: {0}")]
     LuksError(String),
-    
+
     #[error("Configuration error: {0}")]
     ConfigError(String),
-    
+
     #[error("Image operation failed: {0}")]
     ImageError(String),
-    
+
     #[error("SSH operation failed: {0}")]
     SshError(String),
-    
+
     #[error("Validation failed: {0}")]
     ValidationError(String),
-    
+
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
-    
+
     #[error("Serialization error: {0}")]
     SerdeError(#[from] serde_yaml::Error),
-    
+
     #[error("HTTP error: {0}")]
     HttpError(#[from] reqwest::Error),
 }
@@ -323,7 +323,7 @@ use ubuntu_autoinstall_agent::{
 struct Cli {
     #[command(subcommand)]
     command: Commands,
-    
+
     #[arg(short, long, global = true)]
     verbose: bool,
 }
@@ -334,35 +334,35 @@ enum Commands {
     CreateImage {
         #[arg(short, long, default_value = "amd64")]
         arch: Architecture,
-        
+
         #[arg(short, long, default_value = "24.04")]
         version: String,
-        
+
         #[arg(short, long)]
         output: Option<String>,
     },
-    
+
     /// Deploy image to target machine
     Deploy {
         #[arg(short, long)]
         target: String,
-        
+
         #[arg(short, long)]
         config: String,
-        
+
         #[arg(long)]
         via_ssh: bool,
     },
-    
+
     /// Validate image integrity
     Validate {
         #[arg(short, long)]
         image: String,
     },
-    
+
     /// List available images
     ListImages,
-    
+
     /// Cleanup old images
     Cleanup {
         #[arg(long, default_value = "30")]
@@ -373,10 +373,10 @@ enum Commands {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    
+
     // Initialize logging
     logger::init_logger(cli.verbose)?;
-    
+
     // Execute command
     match cli.command {
         Commands::CreateImage { arch, version, output } => {
@@ -405,7 +405,7 @@ async fn main() -> Result<()> {
 **Remove all traces of copilot-agent-util functionality**:
 
 - ❌ No `buf` command processing
-- ❌ No protocol buffer operations  
+- ❌ No protocol buffer operations
 - ❌ No git operations
 - ❌ No linting or formatting tools
 - ❌ No generic command filtering
@@ -524,7 +524,7 @@ Create automated builds for all target architectures with proper artifact genera
 
 ### Required Documentation
 1. `README.md` - User guide and quick start
-2. `DEPLOYMENT.md` - Deployment scenarios and examples  
+2. `DEPLOYMENT.md` - Deployment scenarios and examples
 3. `CONFIGURATION.md` - Configuration file reference
 4. `TROUBLESHOOTING.md` - Common issues and solutions
 5. `API.md` - Library API documentation (if applicable)
@@ -556,7 +556,7 @@ Implement in this exact order:
 
 1. **Week 1**: Error handling, logging, configuration system
 2. **Week 2**: VM management and image builder
-3. **Week 3**: LUKS operations and image deployer  
+3. **Week 3**: LUKS operations and image deployer
 4. **Week 4**: Network operations and SSH deployment
 5. **Week 5**: CLI interface and command implementation
 6. **Week 6**: Testing, documentation, and optimization
