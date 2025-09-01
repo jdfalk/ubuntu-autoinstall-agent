@@ -1,0 +1,22 @@
+# file: examples/specs/ubuntu-24.04-minimal.yaml
+# version: 1.0.0
+# guid: f6g7h8i9-j0k1-2345-6789-012345fghijk
+
+# Minimal Ubuntu 24.04 image specification
+ubuntu_version: "24.04"
+architecture: amd64
+
+base_packages:
+  - openssh-server
+  - curl
+  - wget
+  - htop
+  - vim
+  - git
+
+vm_config:
+  memory_mb: 2048
+  disk_size_gb: 20
+  cpu_cores: 2
+
+custom_scripts: []

@@ -1,0 +1,38 @@
+# file: examples/configs/len-serv-003.yaml
+# version: 1.0.0
+# guid: c3d4e5f6-g7h8-9012-3456-789012cdefgh
+
+# Target configuration for len-serv-003 (based on your existing setup)
+hostname: len-serv-003
+architecture: amd64
+disk_device: /dev/nvme0n1
+timezone: America/New_York
+
+network:
+  interface: enp0s3
+  dhcp: true
+  dns_servers:
+    - 8.8.8.8
+    - 8.8.4.4
+
+users:
+  - name: jfalk
+    sudo: true
+    shell: /bin/bash
+    ssh_keys:
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyDataHere"
+
+luks_config:
+  passphrase: "${LUKS_PASSPHRASE}"  # Environment variable
+  cipher: aes-xts-plain64
+  key_size: 512
+  hash: sha256
+
+packages:
+  - openssh-server
+  - htop
+  - curl
+  - wget
+  - vim
+  - git
+  - debootstrap

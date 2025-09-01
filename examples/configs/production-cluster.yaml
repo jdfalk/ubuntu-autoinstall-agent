@@ -1,0 +1,55 @@
+# file: examples/configs/production-cluster.yaml
+# version: 1.0.0
+# guid: m8n9o0p1-q2r3-4567-8901-234567mnopqr
+
+# Production cluster node configuration
+hostname: production-node-01
+ip_address: 10.1.1.100
+netmask: 255.255.255.0
+gateway: 10.1.1.1
+dns_servers:
+  - 8.8.8.8
+  - 8.8.4.4
+
+# Production-grade encryption
+luks_config:
+  cipher: aes-xts-plain64
+  key_size: 512
+  hash: sha256
+  pbkdf_iterations: 4000
+
+# Admin user for production
+user_config:
+  username: admin
+  full_name: Production Administrator
+  groups:
+    - sudo
+    - docker
+    - adm
+  ssh_key: ${PRODUCTION_SSH_KEY}
+
+# Production package set
+packages:
+  - openssh-server
+  - docker.io
+  - nginx
+  - fail2ban
+  - ufw
+  - htop
+  - vim
+  - curl
+  - wget
+  - monitoring-agent
+
+# Security hardening
+security:
+  disable_password_auth: true
+  enable_firewall: true
+  fail2ban_enabled: true
+  auto_updates: true
+
+# Production post-install
+post_install_scripts:
+  - production-security.sh
+  - monitoring-setup.sh
+  - backup-config.sh
