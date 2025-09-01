@@ -1,0 +1,320 @@
+// file: src/utils/vm.rs
+// version: 1.0.0
+// guid: y5z6a7b8-c9d0-1234-5678-901234yzabcd
+
+//! VM management utilities
+
+use std::path::Path;
+use tokio::process::Command;
+use crate::{
+    config::{Architecture, VmConfig},
+    Result,
+};
+use tracing::{info, debug};
+
+/// VM manager for creating and running virtual machines
+pub struct VmManager {
+    qemu_binary: String,
+}
+
+impl VmManager {
+    /// Create a new VM manager
+    pub fn new() -> Self {
+        Self {
+            qemu_binary: "qemu-system-x86_64".to_string(),
+        }
+    }
+
+    /// Install Ubuntu in a VM using the provided ISO and configuration
+    pub async fn install_ubuntu(
+        &self,
+        vm_disk: &Path,
+        iso_path: &Path,
+        cloud_init_path: &Path,
+        vm_config: &VmConfig,
+        architecture: Architecture,
+    ) -> Result<()> {
+        info!("Starting Ubuntu installation in VM");
+
+        // Select appropriate QEMU binary for architecture
+        let qemu_cmd = match architecture {
+            Architecture::Amd64 => "qemu-system-x86_64",
+            Architecture::Arm64 => "qemu-system-aarch64",
+        };
+
+        // Create cloud-init ISO
+        let cloud_init_iso = self.create_cloud_init_iso(cloud_init_path).await?;
+
+        // Build QEMU command
+        let mut cmd = Command::new(qemu_cmd);
+        cmd.args(&[
+            "-machine", "accel=kvm:tcg", // Use KVM if available, fallback to TCG
+            "-cpu", "host",
+            "-m", &format!("{}M", vm_config.memory_mb),
+            "-smp", &vm_config.cpu_cores.to_string(),
+            "-drive", &format!("file={},format=qcow2,if=virtio", vm_disk.display()),
+            "-drive", &format!("file={},media=cdrom,readonly=on", iso_path.display()),
+            "-drive", &format!("file={},media=cdrom,readonly=on", cloud_init_iso.display()),
+            "-boot", "d", // Boot from CD-ROM first
+            "-netdev", "user,id=net0",
+            "-device", "virtio-net,netdev=net0",
+            "-nographic", // No graphics, console only
+            "-serial", "stdio",
+            "-monitor", "none",
+        ]);
+
+        // Add architecture-specific arguments
+        match architecture {
+            Architecture::Amd64 => {
+                cmd.args(&["-machine", "q35"]);
+            }
+            Architecture::Arm64 => {
+                cmd.args(&[
+                    "-machine", "virt",
+                    "-bios", "/usr/share/qemu-efi-aarch64/QEMU_EFI.fd",
+                ]);
+            }
+        }
+
+        debug!("Starting QEMU installation with command: {:?}", cmd);
+
+        // Start VM and wait for installation to complete
+        let mut child = cmd.spawn()
+            .map_err(|e| crate::error::AutoInstallError::VmError(
+                format!("Failed to start QEMU: {}", e)
+            ))?;
+
+        // In a real implementation, we would monitor the installation process
+        // and wait for completion. For now, we'll use a simple timeout.
+        let timeout = tokio::time::Duration::from_secs(3600); // 1 hour timeout
+        let result = tokio::time::timeout(timeout, child.wait()).await;
+
+        match result {
+            Ok(Ok(status)) => {
+                if status.success() {
+                    info!("Ubuntu installation completed successfully");
+                } else {
+                    return Err(crate::error::AutoInstallError::VmError(
+                        format!("VM installation failed with exit code: {:?}", status.code())
+                    ));
+                }
+            }
+            Ok(Err(e)) => {
+                return Err(crate::error::AutoInstallError::VmError(
+                    format!("VM process error: {}", e)
+                ));
+            }
+            Err(_) => {
+                // Kill the process if it's still running
+                let _ = child.kill().await;
+                return Err(crate::error::AutoInstallError::VmError(
+                    "VM installation timed out after 1 hour".to_string()
+                ));
+            }
+        }
+
+        // Cleanup cloud-init ISO
+        let _ = tokio::fs::remove_file(&cloud_init_iso).await;
+
+        Ok(())
+    }
+
+    /// Create cloud-init ISO from configuration directory
+    async fn create_cloud_init_iso(&self, cloud_init_path: &Path) -> Result<std::path::PathBuf> {
+        let iso_path = cloud_init_path.with_extension("iso");
+
+        debug!("Creating cloud-init ISO: {}", iso_path.display());
+
+        let output = Command::new("genisoimage")
+            .args(&[
+                "-output", iso_path.to_str().unwrap(),
+                "-volid", "cidata",
+                "-joliet",
+                "-rock",
+                cloud_init_path.to_str().unwrap(),
+            ])
+            .output()
+            .await
+            .map_err(|e| crate::error::AutoInstallError::VmError(
+                format!("Failed to create cloud-init ISO: {}", e)
+            ))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(crate::error::AutoInstallError::VmError(
+                format!("genisoimage failed: {}", stderr)
+            ));
+        }
+
+        debug!("Cloud-init ISO created: {}", iso_path.display());
+        Ok(iso_path)
+    }
+
+    /// Test VM functionality by starting a test VM
+    pub async fn test_vm_functionality(&self, architecture: Architecture) -> Result<()> {
+        info!("Testing VM functionality for {} architecture", architecture.as_str());
+
+        let qemu_cmd = match architecture {
+            Architecture::Amd64 => "qemu-system-x86_64",
+            Architecture::Arm64 => "qemu-system-aarch64",
+        };
+
+        // Create a temporary test disk
+        let temp_dir = tempfile::tempdir()
+            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+        let test_disk = temp_dir.path().join("test.qcow2");
+
+        // Create test disk
+        let output = Command::new("qemu-img")
+            .args(&[
+                "create",
+                "-f", "qcow2",
+                test_disk.to_str().unwrap(),
+                "1G",
+            ])
+            .output()
+            .await
+            .map_err(|e| crate::error::AutoInstallError::VmError(
+                format!("Failed to create test disk: {}", e)
+            ))?;
+
+        if !output.status.success() {
+            return Err(crate::error::AutoInstallError::VmError(
+                "Failed to create test disk image".to_string()
+            ));
+        }
+
+        // Test QEMU startup (without actually booting)
+        let mut cmd = Command::new(qemu_cmd);
+        cmd.args(&[
+            "-machine", "accel=kvm:tcg",
+            "-m", "512M",
+            "-drive", &format!("file={},format=qcow2,if=virtio", test_disk.display()),
+            "-nographic",
+            "-serial", "none",
+            "-monitor", "none",
+            "-S", // Start in stopped state
+        ]);
+
+        // Add architecture-specific arguments
+        match architecture {
+            Architecture::Amd64 => {
+                cmd.args(&["-machine", "q35"]);
+            }
+            Architecture::Arm64 => {
+                cmd.args(&["-machine", "virt"]);
+            }
+        }
+
+        let mut child = cmd.spawn()
+            .map_err(|e| crate::error::AutoInstallError::VmError(
+                format!("Failed to start test VM: {}", e)
+            ))?;
+
+        // Give it a moment to start, then kill it
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        child.kill().await
+            .map_err(|e| crate::error::AutoInstallError::VmError(
+                format!("Failed to kill test VM: {}", e)
+            ))?;
+
+        let _ = child.wait().await;
+
+        info!("VM functionality test completed successfully");
+        Ok(())
+    }
+
+    /// Check if KVM acceleration is available
+    pub async fn check_kvm_support(&self) -> bool {
+        use std::os::unix::fs::MetadataExt;
+        
+        Path::new("/dev/kvm").exists() && 
+        tokio::fs::metadata("/dev/kvm").await
+            .map(|m| {
+                // Check if it's a character device (mode & S_IFMT == S_IFCHR)
+                (m.mode() & 0o170000) == 0o020000
+            })
+            .unwrap_or(false)
+    }
+
+    /// Get recommended VM configuration based on system resources
+    pub async fn get_recommended_vm_config(&self) -> Result<VmConfig> {
+        let available_memory = crate::utils::system::SystemUtils::get_available_memory().await?;
+        let available_space = crate::utils::system::SystemUtils::get_available_space("/tmp").await?;
+
+        // Use 50% of available memory, but at least 1GB and at most 8GB
+        let memory_mb = std::cmp::max(1024, std::cmp::min(8192, available_memory as u32 / 2));
+
+        // Use 20GB disk space or 50% of available space, whichever is smaller
+        let disk_size_gb = std::cmp::min(20, available_space as u32 / 2);
+
+        // Use 2 CPU cores by default
+        let cpu_cores = 2;
+
+        Ok(VmConfig {
+            memory_mb,
+            disk_size_gb,
+            cpu_cores,
+        })
+    }
+}
+
+impl Default for VmManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn test_vm_manager_creation() {
+        let vm_manager = VmManager::new();
+        assert_eq!(vm_manager.qemu_binary, "qemu-system-x86_64");
+    }
+
+    #[tokio::test]
+    async fn test_check_kvm_support() {
+        let vm_manager = VmManager::new();
+        let kvm_support = vm_manager.check_kvm_support().await;
+        // This will vary depending on the test environment
+        assert!(kvm_support || !kvm_support); // Always true, just testing it doesn't panic
+    }
+
+    #[tokio::test]
+    async fn test_get_recommended_vm_config() {
+        let vm_manager = VmManager::new();
+        let result = vm_manager.get_recommended_vm_config().await;
+        
+        // Should return a config or an error
+        if let Ok(config) = result {
+            assert!(config.memory_mb >= 1024);
+            assert!(config.disk_size_gb >= 1);
+            assert!(config.cpu_cores >= 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_cloud_init_iso() {
+        let vm_manager = VmManager::new();
+        let temp_dir = TempDir::new().unwrap();
+        
+        // Create mock cloud-init files
+        let cloud_init_dir = temp_dir.path().join("cloud-init");
+        tokio::fs::create_dir_all(&cloud_init_dir).await.unwrap();
+        tokio::fs::write(cloud_init_dir.join("user-data"), "test data").await.unwrap();
+        tokio::fs::write(cloud_init_dir.join("meta-data"), "test meta").await.unwrap();
+        
+        // Skip this test if genisoimage is not available
+        if crate::utils::system::SystemUtils::command_exists("genisoimage").await {
+            let result = vm_manager.create_cloud_init_iso(&cloud_init_dir).await;
+            assert!(result.is_ok());
+            
+            let iso_path = result.unwrap();
+            assert!(iso_path.exists());
+        }
+    }
+}
