@@ -69,6 +69,8 @@ impl SystemUtils {
 
     /// Get available disk space in GB for a path
     pub async fn get_available_space(path: &str) -> Result<u64> {
+        // Note: This function could be enhanced to use CoreUtils::df() 
+        // for more reliable cross-platform behavior
         let output = Command::new("df")
             .args(&["-BG", path])
             .output()
