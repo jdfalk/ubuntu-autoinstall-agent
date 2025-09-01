@@ -210,6 +210,26 @@ All deployments use LUKS full disk encryption by default:
 - QEMU/KVM (for image building)
 - SSH keys configured for target access
 
+### Optional: uutils/coreutils for Enhanced Reliability
+
+For improved cross-platform compatibility and reliability, you can install [uutils/coreutils](https://github.com/uutils/coreutils):
+
+```bash
+# Install uutils coreutils via cargo
+cargo install coreutils
+
+# Or via package manager (if available)
+# Ubuntu/Debian: apt install uutils-coreutils
+# Arch: pacman -S uutils-coreutils
+```
+
+The agent automatically detects and prefers uutils implementations when available, falling back to system commands otherwise. uutils provides:
+
+- Cross-platform compatibility
+- Consistent behavior across different systems
+- Memory-safe implementations
+- Better error handling and diagnostics
+
 ### Building from Source
 
 ```bash

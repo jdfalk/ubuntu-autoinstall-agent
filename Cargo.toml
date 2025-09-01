@@ -55,6 +55,11 @@ regex = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 libc = "0.2"
 
+# Note: uutils/coreutils provides reliable cross-platform implementations
+# of common Unix utilities. While the crates are primarily binaries,
+# they can be installed separately for reliable command execution.
+# See: https://github.com/uutils/coreutils
+
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3.8"

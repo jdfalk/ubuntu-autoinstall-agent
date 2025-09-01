@@ -4,10 +4,12 @@
 
 //! Utility modules for system operations
 
+pub mod coreutils;
 pub mod disk;
 pub mod system;
 pub mod vm;
 
+pub use coreutils::CoreUtils;
 pub use disk::DiskUtils;
 pub use system::SystemUtils;
 pub use vm::VmManager;
