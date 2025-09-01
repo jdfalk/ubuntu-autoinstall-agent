@@ -1,0 +1,75 @@
+# file: .github/dependabot.yml
+# version: 1.0.0
+# guid: 8f62949c-2c65-48ea-86e2-e183acec1c3b
+
+# Smart Dependabot configuration for copilot-agent-util-rust
+# Supports: docker, github-actions, rust
+
+version: 2
+updates:
+- package-ecosystem: docker
+  directory: /
+  schedule:
+    interval: weekly
+    day: wednesday
+    time: 09:00
+    timezone: America/New_York
+  open-pull-requests-limit: 3
+  commit-message:
+    prefix: docker
+    include: scope
+  labels:
+  - dependencies
+  - tech:docker
+- package-ecosystem: github-actions
+  directory: /
+  schedule:
+    interval: weekly
+    day: wednesday
+    time: '10:00'
+    timezone: America/New_York
+  open-pull-requests-limit: 5
+  commit-message:
+    prefix: ci
+    include: scope
+  labels:
+  - dependencies
+  - github-actions
+  - ci-cd
+  groups:
+    ci-dependencies:
+      patterns:
+      - actions/*
+      - github/*
+      update-types:
+      - minor
+      - patch
+    external-actions:
+      patterns:
+      - '*'
+      exclude-patterns:
+      - actions/*
+      - github/*
+      update-types:
+      - minor
+      - patch
+- package-ecosystem: cargo
+  directory: /
+  schedule:
+    interval: weekly
+    day: monday
+    time: '10:00'
+    timezone: America/New_York
+  open-pull-requests-limit: 5
+  commit-message:
+    prefix: rust
+    include: scope
+  labels:
+  - dependencies
+  - tech:rust
+  allow:
+  - dependency-type: direct
+  ignore:
+  - dependency-name: '*'
+    update-types:
+    - version-update:semver-major

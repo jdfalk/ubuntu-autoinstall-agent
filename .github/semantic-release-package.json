@@ -1,0 +1,13 @@
+{
+  "name": "rust-project",
+  "version": "0.0.0-development",
+  "private": true,
+  "devDependencies": {
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/git": "^10.0.1",
+    "@semantic-release/github": "^9.2.6",
+    "@semantic-release/exec": "^6.0.3",
+    "semantic-release": "^22.0.12",
+    "conventional-changelog-conventionalcommits": "^7.0.2"
+  }
+}
