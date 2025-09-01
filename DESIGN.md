@@ -8,6 +8,34 @@
 
 The Ubuntu AutoInstall Agent is a Rust-based utility that automates the deployment of Ubuntu servers using a golden image approach. This system replaces complex shell-based debootstrap installations with a reliable, fast, and consistent image-based deployment system.
 
+### Background and Motivation
+
+**Current Pain Points with Shell-Based Approach:**
+- Complex 500+ line shell scripts (`jinstall.sh`) prone to failures
+- Manual `debootstrap` operations with inconsistent results  
+- Embedded installation logic in YAML user-data files
+- No proper error recovery or rollback mechanisms
+- Difficult to test and validate before production deployment
+- Architecture-specific scripts that don't scale
+- Manual intervention required for troubleshooting failures
+
+**Problems with Current Implementation:**
+1. **Inline Script Complexity**: Critical installation logic embedded in cloud-init user-data YAML files
+2. **Debootstrap Reliability**: Manual filesystem bootstrap operations that fail unpredictably
+3. **No Status Reporting**: Installations fail silently with no feedback mechanism
+4. **Manual Recovery**: Failed installations require manual intervention and restart
+5. **Testing Difficulty**: Cannot validate installations without deploying to actual hardware
+6. **Legacy Code**: Inherited copilot-agent-util features not needed for autoinstall
+
+**Enterprise Requirements:**
+- Deploy latest Ubuntu (24.04+) on both amd64 and arm64 architectures
+- Full disk encryption (LUKS) mandatory for security compliance
+- Netboot/PXE deployment for bare metal servers
+- Zero-touch installation process
+- Automated status reporting and monitoring
+- Rapid deployment (< 10 minutes vs current 30+ minutes)
+- Consistent, reproducible results across all deployments
+
 ## Core Objectives
 
 1. **Fully Automated**: Zero manual intervention required for deployments
