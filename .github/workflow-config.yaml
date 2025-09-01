@@ -1,5 +1,5 @@
 # file: .github/workflow-config.yaml
-# version: 2.0.0
+# version: 2.1.0
 # guid: e5f6a7b8-c9d0-1234-ef56-789012345678
 
 # Modern Workflow Configuration
@@ -21,6 +21,12 @@ build:
     - "20"
     - "22"
     - "24"
+
+  rust_versions:
+    - "1.75"
+    - "1.76"
+    - "1.77"
+    - "1.78"
 
   # Platform support
   platforms:
@@ -72,6 +78,20 @@ repositories:
       rust_versions: ["1.75", "1.76", "1.77"]
       enable_protobuf: false
       enable_docker: true
+
+  - name: "ubuntu-autoinstall-agent"
+    url: "https://github.com/jdfalk/ubuntu-autoinstall-agent"
+    sync_enabled: true
+    custom_build_config:
+      rust_versions: ["1.77", "1.78"]
+      enable_protobuf: false
+      enable_docker: true
+      enable_cross_compile: true
+      target_platforms:
+        - "x86_64-unknown-linux-gnu"
+        - "x86_64-unknown-linux-musl"
+        - "aarch64-unknown-linux-gnu"
+        - "aarch64-unknown-linux-musl"
 
 # Sync configuration
 sync:
