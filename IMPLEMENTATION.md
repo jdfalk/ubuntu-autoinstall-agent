@@ -12,30 +12,13 @@ This document provides step-by-step implementation instructions for the Ubuntu A
 
 **Primary Goal**: Replace complex shell-based Ubuntu autoinstall scripts with a reliable Rust application that uses golden image deployment.
 
-**Context**: This project replaces a complex system of shell scripts and cloud-init configurations used for bare-metal Ubuntu server deployment. The current system uses 500+ line shell scripts (`jinstall.sh`) with debootstrap operations that are unreliable and difficult to debug.
-
 **Key Requirements**:
-- Zero manual intervention (fully automated deployment)
+- Zero manual intervention
 - Support both amd64 and arm64 architectures
 - Full disk encryption (LUKS) by default
 - Golden image approach (build once, deploy many times)
-- Netboot/PXE ready for bare metal deployment
+- Netboot/PXE ready
 - Remove all unnecessary features from copilot-agent-util base
-- 10x performance improvement over current shell-based approach
-
-**Current System Problems Being Solved**:
-1. **Shell Script Fragility**: 500+ line `jinstall.sh` with complex error-prone operations
-2. **Debootstrap Unreliability**: Manual filesystem bootstrap that fails unpredictably
-3. **No Status Reporting**: Silent failures with no feedback mechanism
-4. **Manual Recovery Required**: Failed deployments need complete restart
-5. **Testing Impossible**: Cannot validate without actual hardware deployment
-6. **Architecture Complexity**: Separate scripts for amd64/arm64 that duplicate logic
-
-**Migration Strategy**:
-- Phase out existing shell scripts (`jinstall.sh`, `reporting.sh`)
-- Replace debootstrap operations with golden image deployment
-- Maintain compatibility with existing configuration patterns
-- Keep LUKS encryption and ZFS features from original system
 
 ## Step 1: Project Structure Setup
 
@@ -403,7 +386,6 @@ async fn main() -> Result<()> {
 ### DO NOT Include These Features
 
 **Remove all traces of copilot-agent-util functionality**:
-
 - ❌ No `buf` command processing
 - ❌ No protocol buffer operations
 - ❌ No git operations
@@ -412,50 +394,11 @@ async fn main() -> Result<()> {
 - ❌ No copilot utility features
 
 **Focus ONLY on autoinstall functionality**:
-
 - ✅ Image creation and management
 - ✅ LUKS disk encryption
 - ✅ Ubuntu deployment
 - ✅ Network operations for deployment
 - ✅ Configuration management
-
-### Existing System Analysis
-
-**Current Shell Script Components** (to be replaced):
-
-1. **`jinstall.sh`** - Main installation script (~500 lines):
-   - Disk partitioning and LUKS setup
-   - ZFS pool creation
-   - Debootstrap Ubuntu installation
-   - System configuration and user setup
-   - Network configuration
-   - Bootloader installation
-
-2. **`variables.sh`** - Configuration variables:
-   - `DISK="/dev/nvme0n1"`
-   - `TIMEZONE="America/New_York"`
-   - `DEBOOTSTRAP_RELEASE="oracular"`
-   - `HOSTNAME="len-serv-003"`
-
-3. **`reporting.sh`** - Status reporting (minimal functionality)
-
-4. **Cloud-init configuration structure**:
-   - Initial netboot: `len-serv-003/` (meta-data, user-data, network-config)
-   - Post-install: `len-serv-003_postinstall/` (cleanup and finalization)
-
-**Key Operations from Shell Scripts** (to preserve in Rust):
-
-- **Disk Setup**: GPT partitioning, EFI system partition, LUKS container
-- **ZFS Configuration**: Pool creation, dataset management, compression
-- **Network Setup**: Interface configuration, DHCP, static IP support
-- **User Management**: User creation, sudo access, SSH key installation
-- **Package Installation**: Standard server packages, security updates
-- **Bootloader**: GRUB configuration for LUKS unlock
-
-**Architecture Support Required**:
-- Current system targets both amd64 and arm64
-- Must maintain netboot/PXE compatibility
-- UEFI boot support mandatory
 
 ### Critical Implementation Notes
 
