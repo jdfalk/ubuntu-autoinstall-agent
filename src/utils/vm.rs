@@ -10,7 +10,7 @@ use crate::{
     config::{Architecture, VmConfig},
     Result,
 };
-use tracing::{info, debug};
+use tracing::{info, debug, warn};
 
 /// VM manager for creating and running virtual machines
 pub struct VmManager;
@@ -41,7 +41,7 @@ impl VmManager {
         // Create cloud-init ISO
         let cloud_init_iso = self.create_cloud_init_iso(cloud_init_path).await?;
 
-        // Build QEMU command
+        // Build QEMU command with VNC display and monitor for automation
         let mut cmd = Command::new(qemu_cmd);
         cmd.args(&[
             "-machine", "accel=kvm:tcg", // Use KVM if available, fallback to TCG
@@ -54,9 +54,10 @@ impl VmManager {
             "-boot", "d", // Boot from CD-ROM first
             "-netdev", "user,id=net0",
             "-device", "virtio-net,netdev=net0",
-            "-nographic", // No graphics, console only
-            "-serial", "stdio",
-            "-monitor", "none",
+            "-display", "none", // No display
+            "-serial", "file:/tmp/qemu-serial.log", // Log serial output to file
+            "-monitor", "unix:/tmp/qemu-monitor.sock,server,nowait", // Monitor socket
+            "-daemonize", // Run as daemon
         ]);
 
         // Add architecture-specific arguments
@@ -74,62 +75,153 @@ impl VmManager {
 
         debug!("Starting QEMU installation with command: {:?}", cmd);
 
-        // Start VM and wait for installation to complete
-        let mut child = cmd.spawn()
+        // Start QEMU as daemon
+        let output = cmd.output().await
             .map_err(|e| crate::error::AutoInstallError::VmError(
                 format!("Failed to start QEMU: {}", e)
             ))?;
 
-        // Monitor installation progress
-        info!("Ubuntu installation started - this may take 30-60 minutes");
-
-        // In a real implementation, we would monitor the installation process
-        // by checking for specific log patterns or files created during installation.
-        // For now, we use a timeout with periodic status checks.
-        let timeout = tokio::time::Duration::from_secs(3600); // 1 hour timeout
-        let check_interval = tokio::time::Duration::from_secs(60); // Check every minute
-
-        let start_time = std::time::Instant::now();
-        loop {
-            // Check if process is still running
-            match child.try_wait() {
-                Ok(Some(status)) => {
-                    if status.success() {
-                        info!("Ubuntu installation completed successfully in {:?}", start_time.elapsed());
-                        break;
-                    } else {
-                        return Err(crate::error::AutoInstallError::VmError(
-                            format!("VM installation failed with exit code: {:?}", status.code())
-                        ));
-                    }
-                }
-                Ok(None) => {
-                    // Process still running
-                    if start_time.elapsed() > timeout {
-                        // Kill the process if it's still running
-                        let _ = child.kill().await;
-                        return Err(crate::error::AutoInstallError::VmError(
-                            "VM installation timed out after 1 hour".to_string()
-                        ));
-                    }
-
-                    // Log progress every few minutes
-                    if start_time.elapsed().as_secs() % 300 == 0 { // Every 5 minutes
-                        info!("Installation in progress... elapsed: {:?}", start_time.elapsed());
-                    }
-
-                    tokio::time::sleep(check_interval).await;
-                }
-                Err(e) => {
-                    return Err(crate::error::AutoInstallError::VmError(
-                        format!("VM process error: {}", e)
-                    ));
-                }
-            }
+        if !output.status.success() {
+            return Err(crate::error::AutoInstallError::VmError(
+                format!("QEMU failed to start: {}", String::from_utf8_lossy(&output.stderr))
+            ));
         }
+
+        info!("QEMU started in daemon mode");
+
+        // Monitor installation progress via serial log and QEMU monitor
+        self.monitor_installation().await?;
 
         // Cleanup cloud-init ISO
         let _ = tokio::fs::remove_file(&cloud_init_iso).await;
+
+        Ok(())
+    }
+
+    /// Monitor QEMU installation progress and handle automation
+    async fn monitor_installation(&self) -> Result<()> {
+        info!("Ubuntu installation started - this may take 30-60 minutes");
+
+        let timeout = tokio::time::Duration::from_secs(3600); // 1 hour timeout
+        let start_time = std::time::Instant::now();
+
+        // Wait for GRUB menu to appear and send Enter key
+        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+        self.send_key_to_vm("ret").await?; // Press Enter to select first option
+
+        // Monitor serial output for installation progress
+        let mut grub_handled = false;
+        let mut installation_started = false;
+
+        loop {
+            if start_time.elapsed() > timeout {
+                self.kill_qemu().await?;
+                return Err(crate::error::AutoInstallError::VmError(
+                    "VM installation timed out after 1 hour".to_string()
+                ));
+            }
+
+            // Check serial log for progress indicators
+            if let Ok(log_content) = tokio::fs::read_to_string("/tmp/qemu-serial.log").await {
+                // Handle GRUB menu if not already handled
+                if !grub_handled && log_content.contains("GNU GRUB") {
+                    info!("GRUB menu detected, selecting Ubuntu installation...");
+                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                    self.send_key_to_vm("ret").await?; // Press Enter
+                    grub_handled = true;
+                }
+
+                // Check for autoinstall start
+                if !installation_started && log_content.contains("autoinstall") {
+                    info!("Autoinstall process started");
+                    installation_started = true;
+                }
+
+                // Check for installation completion
+                if log_content.contains("Installation finished") ||
+                   log_content.contains("reboot") ||
+                   log_content.contains("Installation complete") {
+                    info!("Installation completed successfully in {:?}", start_time.elapsed());
+                    self.shutdown_qemu().await?;
+                    return Ok(());
+                }
+
+                // Check for errors
+                if log_content.contains("Failed") || log_content.contains("Error") {
+                    warn!("Possible installation error detected in log");
+                }
+            }
+
+            // Log progress periodically
+            if start_time.elapsed().as_secs() % 300 == 0 { // Every 5 minutes
+                info!("Installation in progress... elapsed: {:?}", start_time.elapsed());
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+        }
+    }
+
+    /// Send key command to QEMU via monitor
+    async fn send_key_to_vm(&self, key: &str) -> Result<()> {
+        let cmd = format!("sendkey {}", key);
+        self.send_monitor_command(&cmd).await
+    }
+
+    /// Send command to QEMU monitor
+    async fn send_monitor_command(&self, command: &str) -> Result<()> {
+        use tokio::io::AsyncWriteExt;
+        use tokio::net::UnixStream;
+
+        // Connect to QEMU monitor socket
+        match UnixStream::connect("/tmp/qemu-monitor.sock").await {
+            Ok(mut stream) => {
+                let cmd_with_newline = format!("{}\n", command);
+                stream.write_all(cmd_with_newline.as_bytes()).await
+                    .map_err(|e| crate::error::AutoInstallError::VmError(
+                        format!("Failed to send monitor command: {}", e)
+                    ))?;
+                debug!("Sent monitor command: {}", command);
+                Ok(())
+            }
+            Err(e) => {
+                debug!("Monitor socket not available: {}", e);
+                Ok(()) // Non-fatal, continue
+            }
+        }
+    }
+
+    /// Shutdown QEMU gracefully
+    async fn shutdown_qemu(&self) -> Result<()> {
+        info!("Shutting down QEMU VM");
+        self.send_monitor_command("quit").await?;
+
+        // Wait a bit for graceful shutdown
+        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+
+        // Cleanup files
+        let _ = tokio::fs::remove_file("/tmp/qemu-serial.log").await;
+        let _ = tokio::fs::remove_file("/tmp/qemu-monitor.sock").await;
+
+        Ok(())
+    }
+
+    /// Kill QEMU process forcefully
+    async fn kill_qemu(&self) -> Result<()> {
+        info!("Forcefully terminating QEMU VM");
+
+        // Find and kill QEMU process
+        let output = Command::new("pkill")
+            .args(&["-f", "qemu-system"])
+            .output()
+            .await;
+
+        if let Err(e) = output {
+            debug!("pkill failed: {}", e);
+        }
+
+        // Cleanup files
+        let _ = tokio::fs::remove_file("/tmp/qemu-serial.log").await;
+        let _ = tokio::fs::remove_file("/tmp/qemu-monitor.sock").await;
 
         Ok(())
     }
