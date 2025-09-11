@@ -29,7 +29,7 @@ pub enum Commands {
         #[arg(short, long, value_enum, default_value = "amd64")]
         arch: ArchArg,
 
-        #[arg(short, long, default_value = "24.04")]
+        #[arg(long, default_value = "24.04")]
         version: String,
 
         #[arg(short, long)]
@@ -47,6 +47,9 @@ pub enum Commands {
         #[arg(short, long)]
         config: String,
 
+        #[arg(short = 'i', long)]
+        image: String,
+
         #[arg(long)]
         via_ssh: bool,
 
@@ -59,6 +62,9 @@ pub enum Commands {
         #[arg(short, long)]
         image: String,
     },
+
+    /// Check system prerequisites
+    CheckPrereqs,
 
     /// List available images
     ListImages {

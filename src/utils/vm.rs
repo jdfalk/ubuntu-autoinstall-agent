@@ -13,16 +13,12 @@ use crate::{
 use tracing::{info, debug};
 
 /// VM manager for creating and running virtual machines
-pub struct VmManager {
-    qemu_binary: String,
-}
+pub struct VmManager;
 
 impl VmManager {
     /// Create a new VM manager
     pub fn new() -> Self {
-        Self {
-            qemu_binary: "qemu-system-x86_64".to_string(),
-        }
+        Self
     }
 
     /// Install Ubuntu in a VM using the provided ISO and configuration
@@ -84,32 +80,51 @@ impl VmManager {
                 format!("Failed to start QEMU: {}", e)
             ))?;
 
-        // In a real implementation, we would monitor the installation process
-        // and wait for completion. For now, we'll use a simple timeout.
-        let timeout = tokio::time::Duration::from_secs(3600); // 1 hour timeout
-        let result = tokio::time::timeout(timeout, child.wait()).await;
+        // Monitor installation progress
+        info!("Ubuntu installation started - this may take 30-60 minutes");
 
-        match result {
-            Ok(Ok(status)) => {
-                if status.success() {
-                    info!("Ubuntu installation completed successfully");
-                } else {
+        // In a real implementation, we would monitor the installation process
+        // by checking for specific log patterns or files created during installation.
+        // For now, we use a timeout with periodic status checks.
+        let timeout = tokio::time::Duration::from_secs(3600); // 1 hour timeout
+        let check_interval = tokio::time::Duration::from_secs(60); // Check every minute
+
+        let start_time = std::time::Instant::now();
+        loop {
+            // Check if process is still running
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    if status.success() {
+                        info!("Ubuntu installation completed successfully in {:?}", start_time.elapsed());
+                        break;
+                    } else {
+                        return Err(crate::error::AutoInstallError::VmError(
+                            format!("VM installation failed with exit code: {:?}", status.code())
+                        ));
+                    }
+                }
+                Ok(None) => {
+                    // Process still running
+                    if start_time.elapsed() > timeout {
+                        // Kill the process if it's still running
+                        let _ = child.kill().await;
+                        return Err(crate::error::AutoInstallError::VmError(
+                            "VM installation timed out after 1 hour".to_string()
+                        ));
+                    }
+
+                    // Log progress every few minutes
+                    if start_time.elapsed().as_secs() % 300 == 0 { // Every 5 minutes
+                        info!("Installation in progress... elapsed: {:?}", start_time.elapsed());
+                    }
+
+                    tokio::time::sleep(check_interval).await;
+                }
+                Err(e) => {
                     return Err(crate::error::AutoInstallError::VmError(
-                        format!("VM installation failed with exit code: {:?}", status.code())
+                        format!("VM process error: {}", e)
                     ));
                 }
-            }
-            Ok(Err(e)) => {
-                return Err(crate::error::AutoInstallError::VmError(
-                    format!("VM process error: {}", e)
-                ));
-            }
-            Err(_) => {
-                // Kill the process if it's still running
-                let _ = child.kill().await;
-                return Err(crate::error::AutoInstallError::VmError(
-                    "VM installation timed out after 1 hour".to_string()
-                ));
             }
         }
 
@@ -227,8 +242,8 @@ impl VmManager {
     /// Check if KVM acceleration is available
     pub async fn check_kvm_support(&self) -> bool {
         use std::os::unix::fs::MetadataExt;
-        
-        Path::new("/dev/kvm").exists() && 
+
+        Path::new("/dev/kvm").exists() &&
         tokio::fs::metadata("/dev/kvm").await
             .map(|m| {
                 // Check if it's a character device (mode & S_IFMT == S_IFCHR)
@@ -288,7 +303,7 @@ mod tests {
     async fn test_get_recommended_vm_config() {
         let vm_manager = VmManager::new();
         let result = vm_manager.get_recommended_vm_config().await;
-        
+
         // Should return a config or an error
         if let Ok(config) = result {
             assert!(config.memory_mb >= 1024);
@@ -301,18 +316,18 @@ mod tests {
     async fn test_create_cloud_init_iso() {
         let vm_manager = VmManager::new();
         let temp_dir = TempDir::new().unwrap();
-        
+
         // Create mock cloud-init files
         let cloud_init_dir = temp_dir.path().join("cloud-init");
         tokio::fs::create_dir_all(&cloud_init_dir).await.unwrap();
         tokio::fs::write(cloud_init_dir.join("user-data"), "test data").await.unwrap();
         tokio::fs::write(cloud_init_dir.join("meta-data"), "test meta").await.unwrap();
-        
+
         // Skip this test if genisoimage is not available
         if crate::utils::system::SystemUtils::command_exists("genisoimage").await {
             let result = vm_manager.create_cloud_init_iso(&cloud_init_dir).await;
             assert!(result.is_ok());
-            
+
             let iso_path = result.unwrap();
             assert!(iso_path.exists());
         }

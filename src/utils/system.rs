@@ -69,7 +69,7 @@ impl SystemUtils {
 
     /// Get available disk space in GB for a path
     pub async fn get_available_space(path: &str) -> Result<u64> {
-        // Note: This function could be enhanced to use CoreUtils::df() 
+        // Note: This function could be enhanced to use CoreUtils::df()
         // for more reliable cross-platform behavior
         let output = Command::new("df")
             .args(&["-BG", path])
@@ -81,7 +81,7 @@ impl SystemUtils {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let lines: Vec<&str> = stdout.lines().collect();
-        
+
         if lines.len() >= 2 {
             let parts: Vec<&str> = lines[1].split_whitespace().collect();
             if parts.len() >= 4 {
@@ -98,27 +98,49 @@ impl SystemUtils {
         ))
     }
 
-    /// Check if required tools are installed
+    /// Check system prerequisites for Ubuntu autoinstall operations
     pub async fn check_prerequisites() -> Result<Vec<String>> {
-        let required_tools = [
-            "qemu-img", "qemu-system-x86_64", "guestfish", "cryptsetup"
+        let required_commands = [
+            "qemu-system-x86_64",
+            "qemu-img",
+            "guestfish",
+            "genisoimage",
+            "cryptsetup",
         ];
 
         let mut missing = Vec::new();
 
-        for tool in &required_tools {
-            if !Self::command_exists(tool).await {
-                missing.push(tool.to_string());
+        for cmd in &required_commands {
+            if !Self::command_exists(cmd).await {
+                missing.push(cmd.to_string());
             }
         }
 
-        if !missing.is_empty() {
-            warn!("Missing required tools: {}", missing.join(", "));
-        } else {
-            debug!("All required tools are available");
+        // Check additional architecture-specific commands
+        if !Self::command_exists("qemu-system-aarch64").await {
+            warn!("qemu-system-aarch64 not found - ARM64 support will be limited");
+        }
+
+        // Check for KVM support
+        if !std::path::Path::new("/dev/kvm").exists() {
+            warn!("KVM acceleration not available - VM operations will be slower");
         }
 
         Ok(missing)
+    }
+
+    /// Verify LUKS/cryptsetup functionality
+    pub async fn verify_luks_support() -> Result<bool> {
+        // Test cryptsetup is available and functional
+        let output = Command::new("cryptsetup")
+            .args(&["--version"])
+            .output()
+            .await
+            .map_err(|_| crate::error::AutoInstallError::SystemError(
+                "cryptsetup not available".to_string()
+            ))?;
+
+        Ok(output.status.success())
     }
 
     /// Create temporary directory
@@ -162,7 +184,7 @@ impl SystemUtils {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(crate::error::AutoInstallError::SystemError(
-                format!("Command {} failed with exit code {}: {}", 
+                format!("Command {} failed with exit code {}: {}",
                         command, output.status.code().unwrap_or(-1), stderr)
             ));
         }
@@ -179,7 +201,7 @@ mod tests {
     async fn test_command_exists() {
         // Test with a command that should exist on most systems
         assert!(SystemUtils::command_exists("ls").await);
-        
+
         // Test with a command that shouldn't exist
         assert!(!SystemUtils::command_exists("nonexistent-command-12345").await);
     }
@@ -202,7 +224,7 @@ mod tests {
     async fn test_create_temp_dir() {
         let temp_dir = SystemUtils::create_temp_dir("test").await.unwrap();
         assert!(temp_dir.exists());
-        
+
         // Cleanup
         let _ = tokio::fs::remove_dir_all(temp_dir).await;
     }

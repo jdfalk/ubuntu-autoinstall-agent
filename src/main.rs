@@ -20,26 +20,29 @@ async fn main() -> Result<()> {
 
     // Execute command
     match cli.command {
-        ubuntu_autoinstall_agent::cli::args::Commands::CreateImage { 
-            arch, version, output, spec 
+        ubuntu_autoinstall_agent::cli::args::Commands::CreateImage {
+            arch, version, output, spec
         } => {
             create_image_command(arch.into(), &version, output, spec).await
         }
-        ubuntu_autoinstall_agent::cli::args::Commands::Deploy { 
-            target, config, via_ssh, dry_run 
+        ubuntu_autoinstall_agent::cli::args::Commands::Deploy {
+            target, config, image, via_ssh, dry_run
         } => {
-            deploy_command(&target, &config, via_ssh, dry_run).await
+            deploy_command(&target, &config, &image, via_ssh, dry_run).await
         }
         ubuntu_autoinstall_agent::cli::args::Commands::Validate { image } => {
             validate_command(&image).await
         }
-        ubuntu_autoinstall_agent::cli::args::Commands::ListImages { 
-            filter_arch, json 
+        ubuntu_autoinstall_agent::cli::args::Commands::CheckPrereqs => {
+            check_prerequisites_command().await
+        }
+        ubuntu_autoinstall_agent::cli::args::Commands::ListImages {
+            filter_arch, json
         } => {
             list_images_command(filter_arch.map(Into::into), json).await
         }
-        ubuntu_autoinstall_agent::cli::args::Commands::Cleanup { 
-            older_than_days, dry_run 
+        ubuntu_autoinstall_agent::cli::args::Commands::Cleanup {
+            older_than_days, dry_run
         } => {
             cleanup_command(older_than_days, dry_run).await
         }

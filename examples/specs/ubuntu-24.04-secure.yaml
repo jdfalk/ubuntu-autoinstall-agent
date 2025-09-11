@@ -1,0 +1,26 @@
+# file: examples/specs/ubuntu-24.04-secure.yaml
+# version: 1.0.0
+# guid: e5f6g7h8-i9j0-1234-5678-901234efghij
+
+# Secure Ubuntu 24.04 image specification
+ubuntu_version: "24.04"
+architecture: amd64
+
+base_packages:
+  - openssh-server
+  - curl
+  - wget
+  - htop
+  - vim
+  - ufw
+  - fail2ban
+  - unattended-upgrades
+  - cryptsetup
+  - lvm2
+
+custom_scripts: []
+
+vm_config:
+  memory_mb: 4096
+  disk_size_gb: 25
+  cpu_cores: 2

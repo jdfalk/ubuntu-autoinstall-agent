@@ -6,14 +6,13 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use tokio::process::Command;
 use tokio::fs;
-use tracing::{info, debug};
-use crate::{
-    config::{ImageSpec, Architecture},
-    utils::vm::VmManager,
-    Result,
-};
+use tokio::process::Command;
+use tracing::{debug, info, warn};
+use crate::config::{ImageSpec, Architecture};
+use crate::network::NetworkDownloader;
+use crate::utils::{VmManager};
+use crate::Result;
 
 /// Builder for creating golden Ubuntu images
 pub struct ImageBuilder {
@@ -36,7 +35,7 @@ impl ImageBuilder {
         spec: ImageSpec,
         output_path: Option<String>,
     ) -> Result<PathBuf> {
-        info!("Creating Ubuntu {} image for {}", 
+        info!("Creating Ubuntu {} image for {}",
               spec.ubuntu_version, spec.architecture.as_str());
 
         // Create working directory
@@ -52,7 +51,7 @@ impl ImageBuilder {
         self.generalize_image(&vm_disk).await?;
 
         // Compress and finalize image
-        let final_path = self.finalize_image(&vm_disk, output_path).await?;
+        let final_path = self.finalize_image(&vm_disk, output_path, &spec).await?;
 
         // Cleanup
         self.cleanup_work_dir().await?;
@@ -77,7 +76,7 @@ impl ImageBuilder {
 
     /// Download Ubuntu ISO if not cached
     async fn download_ubuntu_iso(&self, spec: &ImageSpec) -> Result<PathBuf> {
-        let iso_name = format!("ubuntu-{}-server-{}.iso", 
+        let iso_name = format!("ubuntu-{}-live-server-{}.iso",
                               spec.ubuntu_version, spec.architecture.as_str());
         let iso_path = self.work_dir.join(&iso_name);
 
@@ -96,45 +95,21 @@ impl ImageBuilder {
 
     /// Get Ubuntu ISO download URL
     fn get_ubuntu_iso_url(&self, spec: &ImageSpec) -> Result<String> {
-        let base_url = "https://releases.ubuntu.com";
+        // Ubuntu ISO URLs follow this pattern:
+        // https://releases.ubuntu.com/{version}/ubuntu-{version}-live-server-{arch}.iso
         let arch_suffix = match spec.architecture {
             Architecture::Amd64 => "amd64",
             Architecture::Arm64 => "arm64",
         };
 
-        Ok(format!("{}/{}/ubuntu-{}-server-{}.iso",
-                  base_url, spec.ubuntu_version, spec.ubuntu_version, arch_suffix))
+        Ok(format!("https://releases.ubuntu.com/{}/ubuntu-{}-live-server-{}.iso",
+                  spec.ubuntu_version, spec.ubuntu_version, arch_suffix))
     }
 
     /// Download file with progress
     async fn download_file(&self, url: &str, dest: &Path) -> Result<()> {
-        use futures::StreamExt;
-        use indicatif::{ProgressBar, ProgressStyle};
-
-        let client = reqwest::Client::new();
-        let response = client.get(url).send().await?;
-        
-        let total_size = response.content_length().unwrap_or(0);
-        let pb = ProgressBar::new(total_size);
-        pb.set_style(ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
-            .unwrap()
-            .progress_chars("#>-"));
-
-        let mut file = tokio::fs::File::create(dest).await?;
-        let mut stream = response.bytes_stream();
-        let mut downloaded = 0u64;
-
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk?;
-            tokio::io::AsyncWriteExt::write_all(&mut file, &chunk).await?;
-            downloaded += chunk.len() as u64;
-            pb.set_position(downloaded);
-        }
-
-        pb.finish_with_message("Download completed");
-        info!("Downloaded: {}", dest.display());
-        Ok(())
+        let downloader = NetworkDownloader::new();
+        downloader.download_with_progress(url, dest).await
     }
 
     /// Create VM and install Ubuntu
@@ -142,7 +117,7 @@ impl ImageBuilder {
         info!("Creating VM and installing Ubuntu");
 
         let vm_disk = self.work_dir.join("ubuntu-install.qcow2");
-        
+
         // Create disk image
         self.create_qemu_disk(&vm_disk, spec.vm_config.disk_size_gb).await?;
 
@@ -208,13 +183,14 @@ impl ImageBuilder {
     /// Generate cloud-init user-data for automated installation
     fn generate_user_data(&self, spec: &ImageSpec) -> Result<String> {
         let packages = spec.base_packages.join("\n      - ");
-        
+
         let config = format!(r#"#cloud-config
 autoinstall:
   version: 1
   locale: en_US.UTF-8
   keyboard:
     layout: us
+    variant: ''
   network:
     network:
       version: 2
@@ -224,10 +200,15 @@ autoinstall:
   storage:
     layout:
       name: direct
+      match:
+        size: largest
+    swap:
+      size: 0
   packages:
       - {}
   ssh:
     install-server: true
+    allow-pw: false
   user-data:
     disable_root: true
     users:
@@ -236,9 +217,18 @@ autoinstall:
         shell: /bin/bash
         lock_passwd: true
         ssh_authorized_keys:
-          - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDHQ... # Temporary key for image creation
+          - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDHQGvTZ8nZ8/temp-key-for-image-creation
+    timezone: UTC
   late-commands:
-    - 'echo "Image creation completed" > /target/var/log/autoinstall.log'
+    # Remove temporary SSH key and prepare image for generalization
+    - rm -f /target/home/ubuntu/.ssh/authorized_keys
+    - echo "Image creation completed at $(date)" > /target/var/log/autoinstall.log
+    # Ensure cloud-init will run on first boot
+    - touch /target/etc/cloud/cloud-init.disabled && rm /target/etc/cloud/cloud-init.disabled
+    # Clean up any installer logs that might contain sensitive data
+    - rm -f /target/var/log/installer/autoinstall-user-data
+  error-commands:
+    - echo "Installation failed at $(date)" > /target/var/log/autoinstall-error.log
 "#, packages);
 
         Ok(config)
@@ -305,7 +295,7 @@ umount-all
     }
 
     /// Finalize and compress the image
-    async fn finalize_image(&self, vm_disk: &Path, output_path: Option<String>) -> Result<PathBuf> {
+    async fn finalize_image(&self, vm_disk: &Path, output_path: Option<String>, spec: &ImageSpec) -> Result<PathBuf> {
         info!("Finalizing image");
 
         let final_path = if let Some(output) = output_path {
@@ -335,8 +325,71 @@ umount-all
             ));
         }
 
-        info!("Image compressed to: {}", final_path.display());
+        // Calculate checksum for integrity verification
+        let checksum = self.calculate_image_checksum(&final_path).await?;
+        info!("Image checksum (SHA256): {}", checksum);
+
+        // Get image size
+        let metadata = fs::metadata(&final_path).await
+            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+        let size_bytes = metadata.len();
+
+        // Register the image if it was created successfully
+        let manager = crate::image::manager::ImageManager::new();
+        let image_info = crate::config::ImageInfo::new(
+            spec.ubuntu_version.clone(),
+            spec.architecture,
+            size_bytes,
+            checksum,
+            final_path.clone(),
+        );
+
+        if let Err(e) = manager.register_image(image_info).await {
+            warn!("Failed to register image in database: {}", e);
+        }
+
+        info!("Image compressed to: {} ({})", final_path.display(),
+              Self::format_size(size_bytes));
         Ok(final_path)
+    }
+
+    /// Calculate SHA256 checksum of image file
+    async fn calculate_image_checksum(&self, image_path: &Path) -> Result<String> {
+        use sha2::{Sha256, Digest};
+        use tokio::io::AsyncReadExt;
+
+        let mut file = tokio::fs::File::open(image_path).await
+            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+
+        let mut hasher = Sha256::new();
+        let mut buffer = [0u8; 8192];
+
+        loop {
+            let bytes_read = file.read(&mut buffer).await
+                .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+
+            if bytes_read == 0 {
+                break;
+            }
+
+            hasher.update(&buffer[..bytes_read]);
+        }
+
+        Ok(format!("{:x}", hasher.finalize()))
+    }
+
+    /// Format file size in human-readable format
+    fn format_size(size_bytes: u64) -> String {
+        const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
+        let mut size = size_bytes as f64;
+        let mut unit_index = 0;
+
+        while size >= 1024.0 && unit_index < UNITS.len() - 1 {
+            size /= 1024.0;
+            unit_index += 1;
+        }
+
+        format!("{:.2} {}", size, UNITS[unit_index])
     }
 
     /// Cleanup working directory

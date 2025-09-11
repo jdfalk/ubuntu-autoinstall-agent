@@ -30,7 +30,7 @@ pub async fn create_image_command(
 
     let builder = ImageBuilder::new();
     let image_path = builder.create_image(spec, output).await?;
-    
+
     info!("Image created successfully: {}", image_path.display());
     Ok(())
 }
@@ -39,6 +39,7 @@ pub async fn create_image_command(
 pub async fn deploy_command(
     target: &str,
     config_path: &str,
+    image_path: &str,
     via_ssh: bool,
     dry_run: bool,
 ) -> Result<()> {
@@ -48,16 +49,16 @@ pub async fn deploy_command(
     let config = loader.load_target_config(config_path)?;
 
     if dry_run {
-        info!("DRY RUN: Would deploy to {} via {}", 
-              target, if via_ssh { "SSH" } else { "netboot" });
-        info!("Target config: hostname={}, arch={}", 
+        info!("DRY RUN: Would deploy image {} to {} via {}",
+              image_path, target, if via_ssh { "SSH" } else { "netboot" });
+        info!("Target config: hostname={}, arch={}",
               config.hostname, config.architecture.as_str());
         return Ok(());
     }
 
     let deployer = ImageDeployer::new();
     if via_ssh {
-        deployer.deploy_via_ssh(target, &config).await?;
+        deployer.deploy_via_ssh(target, &config, std::path::Path::new(image_path)).await?;
     } else {
         deployer.deploy_via_netboot(target, &config).await?;
     }
@@ -122,6 +123,85 @@ pub async fn list_images_command(
     Ok(())
 }
 
+/// Check system prerequisites
+pub async fn check_prerequisites_command() -> Result<()> {
+    use crate::utils::system::SystemUtils;
+
+    info!("Checking system prerequisites for Ubuntu autoinstall operations");
+
+    // Check required commands
+    let missing = SystemUtils::check_prerequisites().await?;
+
+    if missing.is_empty() {
+        info!("✓ All required system commands are available");
+    } else {
+        error!("✗ Missing required commands: {}", missing.join(", "));
+        info!("Install missing packages:");
+        for cmd in &missing {
+            match cmd.as_str() {
+                "qemu-system-x86_64" | "qemu-img" => info!("  sudo apt install qemu-kvm qemu-utils"),
+                "guestfish" => info!("  sudo apt install libguestfs-tools"),
+                "genisoimage" => info!("  sudo apt install genisoimage"),
+                "cryptsetup" => info!("  sudo apt install cryptsetup"),
+                _ => {}
+            }
+        }
+    }
+
+    // Check LUKS support
+    match SystemUtils::verify_luks_support().await {
+        Ok(true) => info!("✓ LUKS/cryptsetup support is available"),
+        Ok(false) => error!("✗ LUKS/cryptsetup support not working properly"),
+        Err(e) => error!("✗ LUKS support check failed: {}", e),
+    }
+
+    // Check if running as root (required for some operations)
+    if SystemUtils::is_root() {
+        info!("✓ Running as root - all disk operations available");
+    } else {
+        info!("⚠ Not running as root - some operations may require sudo");
+    }
+
+    // Check system resources
+    match SystemUtils::get_available_memory().await {
+        Ok(mem) => {
+            if mem >= 2048 {
+                info!("✓ Sufficient memory available: {} MB", mem);
+            } else {
+                error!("✗ Insufficient memory: {} MB (recommended: 2048+ MB)", mem);
+            }
+        }
+        Err(e) => error!("✗ Failed to check memory: {}", e),
+    }
+
+    match SystemUtils::get_available_space("/tmp").await {
+        Ok(space) => {
+            if space >= 20 {
+                info!("✓ Sufficient disk space in /tmp: {} GB", space);
+            } else {
+                error!("✗ Insufficient disk space in /tmp: {} GB (recommended: 20+ GB)", space);
+            }
+        }
+        Err(e) => error!("✗ Failed to check disk space: {}", e),
+    }
+
+    // Check KVM support
+    if std::path::Path::new("/dev/kvm").exists() {
+        info!("✓ KVM acceleration available");
+    } else {
+        info!("⚠ KVM acceleration not available - VM operations will be slower");
+    }
+
+    if missing.is_empty() {
+        info!("System is ready for Ubuntu autoinstall operations");
+        Ok(())
+    } else {
+        Err(crate::error::AutoInstallError::SystemError(
+            format!("Missing {} required dependencies", missing.len())
+        ))
+    }
+}
+
 /// Cleanup old images
 pub async fn cleanup_command(older_than_days: u32, dry_run: bool) -> Result<()> {
     info!("Cleaning up images older than {} days", older_than_days);
@@ -137,8 +217,8 @@ pub async fn cleanup_command(older_than_days: u32, dry_run: bool) -> Result<()> 
     if dry_run {
         info!("DRY RUN: Would delete {} old images:", old_images.len());
         for image in &old_images {
-            info!("  {} - {} ({}) - {}", 
-                  image.id, image.ubuntu_version, 
+            info!("  {} - {} ({}) - {}",
+                  image.id, image.ubuntu_version,
                   image.architecture.as_str(), image.size_human());
         }
         return Ok(());

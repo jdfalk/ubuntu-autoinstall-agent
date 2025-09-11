@@ -1,0 +1,50 @@
+# file: examples/configs/production-server.yaml
+# version: 1.0.0
+# guid: f7g8h9i0-j1k2-3456-7890-123456fghijk
+
+# Production server configuration with static networking and security
+hostname: prod-web-001
+architecture: amd64
+disk_device: /dev/nvme0n1
+timezone: America/New_York
+
+network:
+  interface: ens18
+  dhcp: false
+  ip_address: 192.168.1.100/24
+  gateway: 192.168.1.1
+  dns_servers:
+    - 1.1.1.1
+    - 1.0.0.1
+    - 192.168.1.1
+
+users:
+  - name: admin
+    sudo: true
+    shell: /bin/bash
+    ssh_keys:
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample_key_content_here admin@management"
+  - name: deploy
+    sudo: false
+    shell: /bin/bash
+    ssh_keys:
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample_deploy_key_here deploy@ci"
+
+luks_config:
+  passphrase: "${LUKS_PASSPHRASE}"
+  cipher: aes-xts-plain64
+  key_size: 512
+  hash: sha256
+
+packages:
+  - openssh-server
+  - curl
+  - wget
+  - htop
+  - vim
+  - ufw
+  - fail2ban
+  - unattended-upgrades
+  - nginx
+  - certbot
+  - python3-certbot-nginx
