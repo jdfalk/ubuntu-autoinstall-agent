@@ -37,6 +37,7 @@ sha2 = "0.10"
 # File Operations
 tempfile = "3.8"
 walkdir = "2.4"
+dirs = "5.0"
 
 # System Operations
 nix = "0.27"

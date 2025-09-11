@@ -18,6 +18,7 @@ pub async fn create_image_command(
     version: &str,
     output: Option<String>,
     spec_path: Option<String>,
+    cache_dir: Option<String>,
 ) -> Result<()> {
     info!("Creating Ubuntu {} image for {} architecture", version, arch.as_str());
 
@@ -28,7 +29,12 @@ pub async fn create_image_command(
         ImageSpec::minimal(version.to_string(), arch)
     };
 
-    let builder = ImageBuilder::new();
+    let builder = if let Some(cache_dir) = cache_dir {
+        ImageBuilder::with_cache_dir(cache_dir)
+    } else {
+        ImageBuilder::new()
+    };
+
     let image_path = builder.create_image(spec, output).await?;
 
     info!("Image created successfully: {}", image_path.display());

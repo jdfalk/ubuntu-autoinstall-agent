@@ -21,9 +21,9 @@ async fn main() -> Result<()> {
     // Execute command
     match cli.command {
         ubuntu_autoinstall_agent::cli::args::Commands::CreateImage {
-            arch, version, output, spec
+            arch, version, output, spec, cache_dir
         } => {
-            create_image_command(arch.into(), &version, output, spec).await
+            create_image_command(arch.into(), &version, output, spec, cache_dir).await
         }
         ubuntu_autoinstall_agent::cli::args::Commands::Deploy {
             target, config, image, via_ssh, dry_run

@@ -1,5 +1,49 @@
 // file: src/image/builder.rs
-// version: 1.0.0
+// version: 1.2.0
+// guid: a1b2c3d4-e5f6-7890-1234-567890abcdef
+
+//! Golden image builder using QEMU/KVM
+
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use tokio::fs;
+use tokio::process::Command;
+use tracing::{debug, info, warn};
+use crate::config::{ImageSpec, Architecture};
+use crate::network::NetworkDownloader;
+use crate::utils::{VmManager};
+use crate::Result;
+
+/// Golden image builder using QEMU/KVM
+pub struct ImageBuilder {
+    vm_manager: VmManager,
+    work_dir: PathBuf,
+    cache_dir: PathBuf,
+}
+
+impl ImageBuilder {
+    /// Create a new image builder with default cache directory
+    pub fn new() -> Self {
+        let default_cache = dirs::cache_dir()
+            .unwrap_or_else(|| PathBuf::from("/tmp"))
+            .join("ubuntu-autoinstall");
+
+        Self {
+            vm_manager: VmManager::new(),
+            work_dir: default_cache.join("work"),
+            cache_dir: default_cache,
+        }
+    }
+
+    /// Create a new image builder with custom cache directory
+    pub fn with_cache_dir<P: AsRef<std::path::Path>>(cache_dir: P) -> Self {
+        let cache_path = cache_dir.as_ref().to_path_buf();
+        Self {
+            vm_manager: VmManager::new(),
+            work_dir: cache_path.join("work"),
+            cache_dir: cache_path,
+        }
+    }/ version: 1.0.0
 // guid: l2m3n4o5-p6q7-8901-2345-678901lmnopq
 
 //! Golden image builder using QEMU/KVM
@@ -60,17 +104,16 @@ impl ImageBuilder {
         Ok(final_path)
     }
 
-    /// Setup working directory
+    /// Set up working directory
     async fn setup_work_dir(&self) -> Result<()> {
-        if self.work_dir.exists() {
-            fs::remove_dir_all(&self.work_dir).await
-                .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
-        }
-
+        // Create both work and cache directories
         fs::create_dir_all(&self.work_dir).await
+            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+        fs::create_dir_all(&self.cache_dir).await
             .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
 
         debug!("Work directory created: {}", self.work_dir.display());
+        debug!("Cache directory: {}", self.cache_dir.display());
         Ok(())
     }
 
@@ -78,14 +121,20 @@ impl ImageBuilder {
     async fn download_ubuntu_iso(&self, spec: &ImageSpec) -> Result<PathBuf> {
         let iso_name = format!("ubuntu-{}-live-server-{}.iso",
                               spec.ubuntu_version, spec.architecture.as_str());
-        let iso_path = self.work_dir.join(&iso_name);
+
+        // Create cache/isos directory for storing ISO files
+        let iso_cache_dir = self.cache_dir.join("isos");
+        fs::create_dir_all(&iso_cache_dir).await
+            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+
+        let iso_path = iso_cache_dir.join(&iso_name);
 
         if iso_path.exists() {
             info!("Using cached ISO: {}", iso_path.display());
             return Ok(iso_path);
         }
 
-        info!("Downloading Ubuntu ISO: {}", iso_name);
+        info!("Downloading Ubuntu ISO to cache: {}", iso_path.display());
 
         let url = self.get_ubuntu_iso_url(spec)?;
         self.download_file(&url, &iso_path).await?;
@@ -301,8 +350,22 @@ umount-all
         let final_path = if let Some(output) = output_path {
             PathBuf::from(output)
         } else {
-            PathBuf::from(format!("ubuntu-{}.qcow2", chrono::Utc::now().format("%Y%m%d-%H%M%S")))
+            // Create images directory in cache
+            let images_dir = self.cache_dir.join("images");
+            fs::create_dir_all(&images_dir).await
+                .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+
+            images_dir.join(format!("ubuntu-{}-{}-{}.qcow2",
+                                  spec.ubuntu_version,
+                                  spec.architecture.as_str(),
+                                  chrono::Utc::now().format("%Y%m%d-%H%M%S")))
         };
+
+        // Ensure output directory exists
+        if let Some(parent) = final_path.parent() {
+            fs::create_dir_all(parent).await
+                .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+        }
 
         // Compress the image
         let output = Command::new("qemu-img")

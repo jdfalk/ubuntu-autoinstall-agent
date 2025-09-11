@@ -37,6 +37,9 @@ pub enum Commands {
 
         #[arg(short, long)]
         spec: Option<String>,
+
+        #[arg(short, long, help = "Directory for caching ISOs and temporary files")]
+        cache_dir: Option<String>,
     },
 
     /// Deploy image to target machine
