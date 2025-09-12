@@ -51,17 +51,62 @@ impl VmManager {
         let cloud_init_iso = self.create_cloud_init_iso(cloud_init_path).await?;
 
         // Get kernel and initrd paths from netboot directory
-        let kernel_path = netboot_dir.join("ubuntu-installer").join("amd64").join("linux");
-        let initrd_path = netboot_dir.join("ubuntu-installer").join("amd64").join("initrd.gz");
+        // Ubuntu netboot tarballs can have different structures, so we need to search for them
+        let possible_kernel_paths = [
+            netboot_dir.join("ubuntu-installer").join("amd64").join("linux"),
+            netboot_dir.join("linux"),
+            netboot_dir.join("vmlinuz"),
+            netboot_dir.join("kernel"),
+        ];
 
-        if !kernel_path.exists() || !initrd_path.exists() {
-            return Err(crate::error::AutoInstallError::VmError(
-                format!("Netboot kernel or initrd not found in {}", netboot_dir.display())
-            ));
+        let possible_initrd_paths = [
+            netboot_dir.join("ubuntu-installer").join("amd64").join("initrd.gz"),
+            netboot_dir.join("initrd.gz"),
+            netboot_dir.join("initrd"),
+        ];
+
+        let mut kernel_path = None;
+        let mut initrd_path = None;
+
+        // Find kernel file
+        for path in &possible_kernel_paths {
+            if path.exists() {
+                kernel_path = Some(path);
+                break;
+            }
         }
 
-        info!("Using kernel: {}", kernel_path.display());
-        info!("Using initrd: {}", initrd_path.display());
+        // Find initrd file
+        for path in &possible_initrd_paths {
+            if path.exists() {
+                initrd_path = Some(path);
+                break;
+            }
+        }
+
+        let (kernel_file, initrd_file) = match (kernel_path, initrd_path) {
+            (Some(k), Some(i)) => (k, i),
+            _ => {
+                // Log what files are actually in the netboot directory for debugging
+                info!("Available files in netboot directory:");
+                if let Ok(mut entries) = tokio::fs::read_dir(netboot_dir).await {
+                    while let Ok(Some(entry)) = entries.next_entry().await {
+                        info!("  {}", entry.file_name().to_string_lossy());
+                    }
+                }
+
+                return Err(crate::error::AutoInstallError::VmError(
+                    format!("Netboot kernel or initrd not found in {}. \
+                            Searched for kernel: {:?}, initrd: {:?}",
+                            netboot_dir.display(),
+                            possible_kernel_paths.iter().map(|p| p.to_string_lossy()).collect::<Vec<_>>(),
+                            possible_initrd_paths.iter().map(|p| p.to_string_lossy()).collect::<Vec<_>>())
+                ));
+            }
+        };
+
+        info!("Using kernel: {}", kernel_file.display());
+        info!("Using initrd: {}", initrd_file.display());
 
         // Build QEMU command with direct kernel boot (no UEFI needed for netboot)
         let mut cmd = Command::new(qemu_cmd);
@@ -72,8 +117,8 @@ impl VmManager {
             "-smp", &vm_config.cpu_cores.to_string(),
             "-drive", &format!("file={},format=qcow2,if=virtio", vm_disk.display()),
             "-drive", &format!("file={},media=cdrom,readonly=on", cloud_init_iso.display()),
-            "-kernel", kernel_path.to_str().unwrap(),
-            "-initrd", initrd_path.to_str().unwrap(),
+            "-kernel", kernel_file.to_str().unwrap(),
+            "-initrd", initrd_file.to_str().unwrap(),
             "-append", "console=ttyS0 console=tty0 autoinstall 'ds=nocloud;seedfrom=/dev/sr0/'",
             "-netdev", "user,id=net0",
             "-device", "virtio-net,netdev=net0",

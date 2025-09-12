@@ -110,6 +110,17 @@ impl IsoManager {
         }
 
         debug!("Netboot tarball extracted successfully");
+
+        // List extracted files for debugging
+        let mut entries = tokio::fs::read_dir(extract_dir).await
+            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+
+        debug!("Contents of extracted netboot directory:");
+        while let Some(entry) = entries.next_entry().await
+            .map_err(|e| crate::error::AutoInstallError::IoError(e))? {
+            debug!("  {}", entry.file_name().to_string_lossy());
+        }
+
         Ok(())
     }
 
