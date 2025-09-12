@@ -165,7 +165,10 @@ impl IsoManager {
 
         Err(crate::error::AutoInstallError::IoError(
             std::io::Error::new(std::io::ErrorKind::Other,
-                "No ISO creation tools available (tried genisoimage, mkisofs)")
+                "No ISO creation tools available. Please install one of: genisoimage, mkisofs, or xorriso.\n\
+                 On Ubuntu/Debian: sudo apt install genisoimage\n\
+                 On macOS: brew install cdrtools\n\
+                 On RHEL/CentOS: sudo yum install genisoimage")
         ))
     }    /// Download file with progress
     async fn download_file(&self, url: &str, dest: &Path) -> Result<()> {

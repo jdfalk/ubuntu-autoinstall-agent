@@ -212,6 +212,30 @@ All deployments use LUKS full disk encryption by default:
 - ISO creation tools (one of: genisoimage, mkisofs, or xorriso)
 - tar (for extracting netboot tarballs)
 
+#### Installing ISO Creation Tools
+
+**Ubuntu/Debian:**
+```bash
+sudo apt install genisoimage
+```
+
+**macOS:**
+```bash
+brew install cdrtools
+```
+
+**RHEL/CentOS/Fedora:**
+```bash
+sudo yum install genisoimage
+# or on newer versions:
+sudo dnf install genisoimage
+```
+
+**Arch Linux:**
+```bash
+sudo pacman -S cdrtools
+```
+
 ### Optional: uutils/coreutils for Enhanced Reliability
 
 For improved cross-platform compatibility and reliability, you can install [uutils/coreutils](https://github.com/uutils/coreutils):
