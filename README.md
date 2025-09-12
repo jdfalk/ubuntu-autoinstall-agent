@@ -43,13 +43,13 @@ sudo mv ubuntu-autoinstall-agent /usr/local/bin/
    ```bash
    # Set encryption passphrase
    export LUKS_PASSPHRASE="your-secure-passphrase"
-   
+
    # Test deployment
    ubuntu-autoinstall-agent deploy \
      --target your-server.example.com \
      --config examples/configs/basic-server.yaml \
      --via-ssh --dry-run
-   
+
    # Actual deployment
    ubuntu-autoinstall-agent deploy \
      --target your-server.example.com \
@@ -191,7 +191,7 @@ custom_scripts: []
 All deployments use LUKS full disk encryption by default:
 
 - **Cipher**: AES-XTS-Plain64 (configurable)
-- **Key Size**: 512 bits (configurable)  
+- **Key Size**: 512 bits (configurable)
 - **Hash**: SHA256 (configurable)
 - **Passphrase**: Environment variable substitution prevents secrets in configs
 
@@ -209,6 +209,8 @@ All deployments use LUKS full disk encryption by default:
 - Rust 1.70+
 - QEMU/KVM (for image building)
 - SSH keys configured for target access
+- xorriso (for creating bootable ISOs from netboot files)
+- tar (for extracting netboot tarballs)
 
 ### Optional: uutils/coreutils for Enhanced Reliability
 
@@ -244,7 +246,7 @@ cargo build --release
 # Unit tests
 cargo test
 
-# Integration tests  
+# Integration tests
 cargo test --test integration_test
 
 # All tests
