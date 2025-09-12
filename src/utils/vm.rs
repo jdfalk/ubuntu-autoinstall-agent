@@ -240,8 +240,13 @@ impl VmManager {
 
         // Try to find OVMF files in common locations
         let ovmf_paths = [
-            // Ubuntu/Debian
+            // Ubuntu/Debian (newer 4M format)
+            ("/usr/share/OVMF/OVMF_CODE_4M.fd", "/usr/share/OVMF/OVMF_VARS_4M.fd"),
+            // Ubuntu/Debian (legacy 2M format)
             ("/usr/share/OVMF/OVMF_CODE.fd", "/usr/share/OVMF/OVMF_VARS.fd"),
+            // Ubuntu/Debian (alternative paths)
+            ("/usr/share/ovmf/OVMF.fd", "/usr/share/OVMF/OVMF_VARS_4M.fd"),
+            ("/usr/share/qemu/OVMF.fd", "/usr/share/OVMF/OVMF_VARS_4M.fd"),
             // Fedora/RHEL
             ("/usr/share/edk2/ovmf/OVMF_CODE.fd", "/usr/share/edk2/ovmf/OVMF_VARS.fd"),
             // Arch Linux
