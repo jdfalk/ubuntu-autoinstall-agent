@@ -190,13 +190,12 @@ impl VmManager {
         let timeout = tokio::time::Duration::from_secs(3600); // 1 hour timeout
         let start_time = std::time::Instant::now();
 
-        // Wait for GRUB menu to appear and send Enter key
-        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
-        self.send_key_to_vm("ret").await?; // Press Enter to select first option
+        // For direct kernel boot, we don't need to wait for GRUB or send keys
+        // The kernel boots directly into the installer
 
         // Monitor serial output for installation progress
-        let mut grub_handled = false;
         let mut installation_started = false;
+        let mut cloud_init_started = false;
 
         loop {
             if start_time.elapsed() > timeout {
@@ -218,19 +217,18 @@ impl VmManager {
             }
 
             if !combined_log.is_empty() {
-                // Handle UEFI boot menu or GRUB menu if not already handled
-                if !grub_handled && (combined_log.contains("GNU GRUB") ||
-                                   combined_log.contains("UEFI") ||
-                                   combined_log.contains("Boot Menu") ||
-                                   combined_log.contains("installer")) {
-                    info!("Boot menu detected, selecting Ubuntu installation...");
-                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                    self.send_key_to_vm("ret").await?; // Press Enter
-                    grub_handled = true;
+                // Check for cloud-init startup
+                if !cloud_init_started && (combined_log.contains("cloud-init") ||
+                                          combined_log.contains("Cloud-init") ||
+                                          combined_log.contains("Starting initial cloud-init") ||
+                                          combined_log.contains("cloud init")) {
+                    info!("Cloud-init detected, looking for autoinstall...");
+                    cloud_init_started = true;
                 }
 
                 // Check for installer activity
                 if !installation_started && (combined_log.contains("autoinstall") ||
+                                           combined_log.contains("subiquity") ||  // Ubuntu Server installer
                                            combined_log.contains("installer") ||
                                            combined_log.contains("d-i") ||  // debian-installer
                                            combined_log.contains("ubuntu-installer")) {
@@ -242,7 +240,9 @@ impl VmManager {
                 if combined_log.contains("Installation finished") ||
                    combined_log.contains("reboot") ||
                    combined_log.contains("Installation complete") ||
-                   combined_log.contains("install successful") {
+                   combined_log.contains("install successful") ||
+                   combined_log.contains("subiquity/Late") ||
+                   combined_log.contains("The system will reboot") {
                     info!("Installation completed successfully in {:?}", start_time.elapsed());
                     self.shutdown_qemu().await?;
                     return Ok(());
@@ -257,10 +257,21 @@ impl VmManager {
                     warn!("Installation error detected in logs");
                 }
 
-                // Log any new content for debugging
+                // Log any new content for debugging (more detailed)
                 if combined_log.len() > 100 {
-                    let last_lines: Vec<&str> = combined_log.lines().rev().take(5).collect();
-                    debug!("Recent log activity: {:?}", last_lines);
+                    let recent_lines: Vec<&str> = combined_log.lines().rev().take(10).collect();
+                    debug!("Recent boot activity: {:?}", recent_lines);
+
+                    // Look for specific userspace indicators
+                    if combined_log.contains("systemd") && !cloud_init_started {
+                        info!("Systemd started, waiting for cloud-init...");
+                    }
+                    if combined_log.contains("/init as init process") {
+                        info!("Init process started, system transitioning to userspace");
+                    }
+                    if combined_log.contains("login:") || combined_log.contains("ubuntu login:") {
+                        warn!("System reached login prompt - autoinstall may not have started");
+                    }
                 }
             }
 
