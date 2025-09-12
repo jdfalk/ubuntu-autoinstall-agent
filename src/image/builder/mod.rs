@@ -54,7 +54,7 @@ impl ImageBuilder {
 
     /// Create a golden image from specification
     pub async fn create_image(
-        &self,
+        &mut self,
         spec: ImageSpec,
         output_path: Option<String>,
     ) -> Result<PathBuf> {

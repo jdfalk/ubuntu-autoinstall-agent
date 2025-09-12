@@ -29,7 +29,7 @@ pub async fn create_image_command(
         ImageSpec::minimal(version.to_string(), arch)
     };
 
-    let builder = if let Some(cache_dir) = cache_dir {
+    let mut builder = if let Some(cache_dir) = cache_dir {
         ImageBuilder::with_cache_dir(cache_dir)
     } else {
         ImageBuilder::new()

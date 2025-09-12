@@ -236,6 +236,30 @@ sudo dnf install genisoimage
 sudo pacman -S cdrtools
 ```
 
+#### Installing OVMF/UEFI Firmware
+
+For VM image creation, you'll also need OVMF UEFI firmware:
+
+**Ubuntu/Debian:**
+```bash
+sudo apt install ovmf
+```
+
+**macOS:**
+```bash
+brew install qemu  # Includes UEFI firmware
+```
+
+**RHEL/CentOS/Fedora:**
+```bash
+sudo dnf install edk2-ovmf
+```
+
+**Arch Linux:**
+```bash
+sudo pacman -S edk2-ovmf
+```
+
 ### Optional: uutils/coreutils for Enhanced Reliability
 
 For improved cross-platform compatibility and reliability, you can install [uutils/coreutils](https://github.com/uutils/coreutils):

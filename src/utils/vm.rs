@@ -13,17 +13,23 @@ use crate::{
 use tracing::{info, debug, warn};
 
 /// VM manager for creating and running virtual machines
-pub struct VmManager;
+pub struct VmManager {
+    ovmf_code_path: Option<String>,
+    ovmf_vars_path: Option<String>,
+}
 
 impl VmManager {
     /// Create a new VM manager
     pub fn new() -> Self {
-        Self
+        Self {
+            ovmf_code_path: None,
+            ovmf_vars_path: None,
+        }
     }
 
     /// Install Ubuntu in a VM using the provided ISO and configuration
     pub async fn install_ubuntu(
-        &self,
+        &mut self,
         vm_disk: &Path,
         iso_path: &Path,
         cloud_init_path: &Path,
@@ -32,7 +38,7 @@ impl VmManager {
     ) -> Result<()> {
         info!("Starting Ubuntu installation in VM");
 
-        // Set up UEFI environment
+        // Set up UEFI environment and get paths
         self.setup_uefi_environment().await?;
 
         // Select appropriate QEMU binary for architecture
@@ -44,6 +50,13 @@ impl VmManager {
         // Create cloud-init ISO
         let cloud_init_iso = self.create_cloud_init_iso(cloud_init_path).await?;
 
+        // Get OVMF paths (should be set by setup_uefi_environment)
+        let ovmf_code = self.ovmf_code_path.as_ref()
+            .ok_or_else(|| crate::error::AutoInstallError::VmError(
+                "OVMF code path not initialized".to_string()
+            ))?;
+        let ovmf_vars = "/tmp/OVMF_VARS.fd"; // Always use temp location for vars
+
         // Build QEMU command with VNC display and monitor for automation
         let mut cmd = Command::new(qemu_cmd);
         cmd.args(&[
@@ -51,8 +64,8 @@ impl VmManager {
             "-cpu", "host",
             "-m", &format!("{}M", vm_config.memory_mb),
             "-smp", &vm_config.cpu_cores.to_string(),
-            "-drive", &format!("if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE.fd"), // UEFI firmware
-            "-drive", &format!("if=pflash,format=raw,file=/tmp/OVMF_VARS.fd"), // UEFI variables (writable)
+            "-drive", &format!("if=pflash,format=raw,readonly=on,file={}", ovmf_code), // UEFI firmware
+            "-drive", &format!("if=pflash,format=raw,file={}", ovmf_vars), // UEFI variables (writable)
             "-drive", &format!("file={},format=qcow2,if=virtio", vm_disk.display()),
             "-drive", &format!("file={},media=cdrom,readonly=on", iso_path.display()),
             "-drive", &format!("file={},media=cdrom,readonly=on", cloud_init_iso.display()),
@@ -222,27 +235,64 @@ impl VmManager {
     }
 
     /// Set up UEFI environment for VM
-    async fn setup_uefi_environment(&self) -> Result<()> {
+    async fn setup_uefi_environment(&mut self) -> Result<()> {
         use tokio::fs;
 
-        // Copy OVMF_VARS.fd to /tmp for writable UEFI variables
-        let ovmf_vars_template = "/usr/share/OVMF/OVMF_VARS.fd";
-        let ovmf_vars_runtime = "/tmp/OVMF_VARS.fd";
+        // Try to find OVMF files in common locations
+        let ovmf_paths = [
+            // Ubuntu/Debian
+            ("/usr/share/OVMF/OVMF_CODE.fd", "/usr/share/OVMF/OVMF_VARS.fd"),
+            // Fedora/RHEL
+            ("/usr/share/edk2/ovmf/OVMF_CODE.fd", "/usr/share/edk2/ovmf/OVMF_VARS.fd"),
+            // Arch Linux
+            ("/usr/share/ovmf/x64/OVMF_CODE.fd", "/usr/share/ovmf/x64/OVMF_VARS.fd"),
+            // macOS (Homebrew)
+            ("/opt/homebrew/share/qemu/edk2-x86_64-code.fd", "/opt/homebrew/share/qemu/edk2-i386-vars.fd"),
+            ("/usr/local/share/qemu/edk2-x86_64-code.fd", "/usr/local/share/qemu/edk2-i386-vars.fd"),
+        ];
 
-        // Check if OVMF files exist
-        if !fs::try_exists("/usr/share/OVMF/OVMF_CODE.fd").await.unwrap_or(false) {
-            return Err(crate::error::AutoInstallError::VmError(
-                "OVMF UEFI firmware not found. Install ovmf package.".to_string()
-            ));
+        let mut ovmf_code_path = None;
+        let mut ovmf_vars_template = None;
+
+        // Find available OVMF files
+        for (code_path, vars_path) in &ovmf_paths {
+            if fs::try_exists(code_path).await.unwrap_or(false) &&
+               fs::try_exists(vars_path).await.unwrap_or(false) {
+                ovmf_code_path = Some(code_path);
+                ovmf_vars_template = Some(vars_path);
+                debug!("Found OVMF files at: {} and {}", code_path, vars_path);
+                break;
+            }
         }
 
+        let (ovmf_code, ovmf_vars_src) = match (ovmf_code_path, ovmf_vars_template) {
+            (Some(code), Some(vars)) => (code, vars),
+            _ => {
+                return Err(crate::error::AutoInstallError::VmError(
+                    "OVMF UEFI firmware not found. Please install OVMF/EDK2:\n\
+                     Ubuntu/Debian: sudo apt install ovmf\n\
+                     Fedora/RHEL: sudo dnf install edk2-ovmf\n\
+                     Arch Linux: sudo pacman -S edk2-ovmf\n\
+                     macOS: brew install qemu".to_string()
+                ));
+            }
+        };
+
+        // Store the paths for later use
+        self.ovmf_code_path = Some(ovmf_code.to_string());
+        self.ovmf_vars_path = Some(ovmf_vars_src.to_string());
+
         // Copy OVMF_VARS.fd to temporary writable location
-        fs::copy(ovmf_vars_template, ovmf_vars_runtime).await
+        let ovmf_vars_runtime = "/tmp/OVMF_VARS.fd";
+        fs::copy(ovmf_vars_src, ovmf_vars_runtime).await
             .map_err(|e| crate::error::AutoInstallError::VmError(
                 format!("Failed to copy OVMF_VARS.fd: {}", e)
             ))?;
 
         debug!("UEFI environment set up successfully");
+        debug!("OVMF_CODE: {}", ovmf_code);
+        debug!("OVMF_VARS: {}", ovmf_vars_runtime);
+
         Ok(())
     }
 
