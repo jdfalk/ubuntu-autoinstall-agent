@@ -42,7 +42,11 @@ impl CloudInitManager {
 
     /// Generate cloud-init user-data for automated installation
     fn generate_user_data(&self, spec: &ImageSpec) -> Result<String> {
-        let packages = spec.base_packages.join("\n      - ");
+        let packages = spec.base_packages.join("\n    - ");
+
+        // Generate a password hash for the ubuntu user (password: 'ubuntu')
+        // In production, this should be configurable or use key-based auth only
+        let password_hash = "$6$rounds=4096$saltsalt$Nn9XLY39PZBO1NMdM9M1BKoJFtIpEcj1zLEHdN6mU.FWrJKOvE4PN8.BGeLhq.KOdFBVZ3MmE7Bl/VLy5L78O1";
 
         let config = format!(r#"#cloud-config
 autoinstall:
@@ -52,59 +56,49 @@ autoinstall:
     layout: us
     variant: ''
   network:
-    network:
-      version: 2
-      ethernets:
-        eth0:
-          dhcp4: true
+    version: 2
+    ethernets:
+      eth0:
+        dhcp4: true
   storage:
     layout:
       name: direct
       match:
         size: largest
-    swap:
-      size: 0
   packages:
-      - {}
+    - {}
   ssh:
     install-server: true
     allow-pw: false
-  user-data:
-    disable_root: true
-    users:
-      - name: ubuntu
-        sudo: ALL=(ALL) NOPASSWD:ALL
-        shell: /bin/bash
-        lock_passwd: true
-        ssh_authorized_keys:
-          - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDHQGvTZ8nZ8/temp-key-for-image-creation
-    timezone: UTC
+    authorized-keys:
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDHQGvTZ8nZ8/temp-key-for-image-creation
+  identity:
+    realname: Ubuntu User
+    username: ubuntu
+    hostname: ubuntu-autoinstall
+    password: '{}'
   kernel:
-    package: linux-generic
-    cmdline: "console=ttyS0,115200n8 console=tty0"
-  grub:
-    terminal: "console serial"
-    terminal_input: "console serial"
-    terminal_output: "console serial"
-    serial_command: "serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"
-    cmdline_linux_default: "console=ttyS0,115200n8 console=tty0"
+    flavor: generic
+  timezone: UTC
+  updates: security
+  shutdown: reboot
   late-commands:
     # Configure GRUB for serial console
     - echo 'GRUB_TERMINAL="console serial"' >> /target/etc/default/grub
     - echo 'GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"' >> /target/etc/default/grub
     - echo 'GRUB_CMDLINE_LINUX_DEFAULT="console=ttyS0,115200n8 console=tty0"' >> /target/etc/default/grub
-    # Remove temporary SSH key and prepare image for generalization
+    # Configure sudoers for passwordless sudo
+    - echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' >> /target/etc/sudoers.d/ubuntu-nopasswd
+    - chmod 440 /target/etc/sudoers.d/ubuntu-nopasswd
+    # Remove temporary SSH key - it will be replaced during VM provisioning
     - rm -f /target/home/ubuntu/.ssh/authorized_keys
     - echo "Image creation completed at $(date)" > /target/var/log/autoinstall.log
-    # Ensure cloud-init will run on first boot
-    - touch /target/etc/cloud/cloud-init.disabled && rm /target/etc/cloud/cloud-init.disabled
-    # Clean up any installer logs that might contain sensitive data
-    - rm -f /target/var/log/installer/autoinstall-user-data
     # Update GRUB configuration
     - chroot /target update-grub
   error-commands:
     - echo "Installation failed at $(date)" > /target/var/log/autoinstall-error.log
-"#, packages);
+    - journalctl -b > /target/var/log/autoinstall-journal.log
+"#, packages, password_hash);
 
         Ok(config)
     }

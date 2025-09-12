@@ -11,7 +11,7 @@ use crate::{
     network::download::NetworkDownloader,
     Result,
 };
-use tracing::{info, debug};
+use tracing::info;
 
 /// ISO download and caching manager
 pub struct IsoManager {
@@ -24,47 +24,46 @@ impl IsoManager {
         Self { cache_dir }
     }
 
-    /// Download Ubuntu netboot files if not cached
+    /// Download Ubuntu Server ISO if not cached and extract kernel/initrd for direct boot
     pub async fn get_ubuntu_iso(&self, spec: &ImageSpec) -> Result<PathBuf> {
-        // For netboot, we'll extract the tarball and return the kernel path for direct booting
-        let netboot_dir = self.cache_dir.join("netboot").join(format!("ubuntu-{}-{}",
-                                                                     spec.ubuntu_version,
-                                                                     spec.architecture.as_str()));
+        // For autoinstall, we need the full Ubuntu Server ISO, not netboot
+        let iso_dir = self.cache_dir.join("isos").join(format!("ubuntu-{}-{}",
+            spec.ubuntu_version, spec.architecture.as_str()));
 
-        // Create cache directories
-        fs::create_dir_all(&self.cache_dir.join("isos")).await
-            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
-        fs::create_dir_all(&netboot_dir).await
+        let extract_dir = self.cache_dir.join("extracted").join(format!("ubuntu-{}-{}",
+            spec.ubuntu_version, spec.architecture.as_str()));
+
+        fs::create_dir_all(&iso_dir).await
             .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
 
-        // Check if netboot files already extracted
-        let kernel_path = netboot_dir.join("ubuntu-installer").join("amd64").join("linux");
+        fs::create_dir_all(&extract_dir).await
+            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+
+        // Check if kernel files already extracted
+        let kernel_path = extract_dir.join("casper").join("vmlinuz");
         if kernel_path.exists() {
-            info!("Using cached netboot files: {}", netboot_dir.display());
-            return Ok(netboot_dir);
+            info!("Using cached Ubuntu Server ISO files: {}", extract_dir.display());
+            return Ok(extract_dir);
         }
 
-        info!("Downloading and extracting Ubuntu netboot files: {}", netboot_dir.display());
+        info!("Downloading and extracting Ubuntu Server ISO: {}", extract_dir.display());
 
-        // Download netboot tarball
-        let tarball_url = self.get_netboot_tarball_url(spec)?;
-        let tarball_path = self.cache_dir.join("isos").join(format!("ubuntu-{}-netboot-{}.tar.gz",
-                                                                   spec.ubuntu_version,
-                                                                   spec.architecture.as_str()));
+        // Download Ubuntu Server ISO
+        let iso_url = self.get_ubuntu_server_iso_url(spec)?;
+        let iso_path = iso_dir.join(format!("ubuntu-{}-live-server-{}.iso",
+            spec.ubuntu_version, spec.architecture.as_str()));
 
-        // Download tarball if not cached
-        if !tarball_path.exists() {
-            self.download_file(&tarball_url, &tarball_path).await?;
-        }
+        info!("Downloading Ubuntu Server ISO from: {}", iso_url);
+        self.download_file(&iso_url, &iso_path).await?;
 
-        // Extract tarball
-        self.extract_netboot_tarball(&tarball_path, &netboot_dir).await?;
+        // Extract kernel and initrd from ISO
+        self.extract_iso_boot_files(&iso_path, &extract_dir).await?;
 
-        Ok(netboot_dir)
-    }    /// Get Ubuntu netboot tarball download URL
-    fn get_netboot_tarball_url(&self, spec: &ImageSpec) -> Result<String> {
-        // Ubuntu netboot tarball URLs follow this pattern:
-        // https://releases.ubuntu.com/{codename}/ubuntu-{version}-netboot-{arch}.tar.gz
+        Ok(extract_dir)
+    }    /// Get Ubuntu Server ISO download URL
+    fn get_ubuntu_server_iso_url(&self, spec: &ImageSpec) -> Result<String> {
+        // Ubuntu Server ISO URLs follow this pattern:
+        // https://releases.ubuntu.com/{codename}/ubuntu-{version}-live-server-{arch}.iso
         let arch_suffix = match spec.architecture {
             Architecture::Amd64 => "amd64",
             Architecture::Arm64 => "arm64",
@@ -82,45 +81,77 @@ impl IsoManager {
             )),
         };
 
-        Ok(format!("https://releases.ubuntu.com/{}/ubuntu-{}-netboot-{}.tar.gz",
+        Ok(format!("https://releases.ubuntu.com/{}/ubuntu-{}-live-server-{}.iso",
                   codename, spec.ubuntu_version, arch_suffix))
     }
 
-    /// Extract netboot tarball
-    async fn extract_netboot_tarball(&self, tarball_path: &Path, extract_dir: &Path) -> Result<()> {
+    /// Extract kernel and initrd from Ubuntu Server ISO for direct boot
+    async fn extract_iso_boot_files(&self, iso_path: &Path, extract_dir: &Path) -> Result<()> {
         use tokio::process::Command;
 
-        info!("Extracting netboot tarball to: {}", extract_dir.display());
+        info!("Extracting boot files from ISO: {}", iso_path.display());
 
-        let output = Command::new("tar")
-            .args(&[
-                "-xzf", tarball_path.to_str().unwrap(),
-                "-C", extract_dir.to_str().unwrap(),
-                "--strip-components=1", // Remove top-level directory from tarball
-            ])
+        // Mount the ISO and extract kernel/initrd files
+        let mount_dir = extract_dir.join("mnt");
+        fs::create_dir_all(&mount_dir).await
+            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+
+        // Create a temporary mount script since we need sudo
+        let mount_script = extract_dir.join("mount_iso.sh");
+        let mount_script_content = format!(r#"#!/bin/bash
+set -e
+
+# Mount ISO
+sudo mount -o loop "{}" "{}"
+
+# Copy casper directory (contains kernel and initrd)
+cp -r "{}/casper" "{}"
+
+# Copy .disk directory (contains installer metadata)
+if [ -d "{}/disk" ]; then
+    cp -r "{}/disk" "{}"
+fi
+
+# Unmount ISO
+sudo umount "{}"
+
+echo "ISO boot files extracted successfully"
+"#,
+            iso_path.display(), mount_dir.display(),
+            mount_dir.display(), extract_dir.display(),
+            mount_dir.display(), mount_dir.display(), extract_dir.display(),
+            mount_dir.display()
+        );
+
+        fs::write(&mount_script, mount_script_content).await
+            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+
+        // Make script executable
+        Command::new("chmod")
+            .args(&["+x", mount_script.to_str().unwrap()])
+            .output()
+            .await
+            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+
+        // Execute mount script
+        let output = Command::new("bash")
+            .arg(mount_script.to_str().unwrap())
             .output()
             .await
             .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
 
         if !output.status.success() {
-            return Err(crate::error::AutoInstallError::IoError(
-                std::io::Error::new(std::io::ErrorKind::Other,
-                    format!("Failed to extract tarball: {}", String::from_utf8_lossy(&output.stderr)))
-            ));
+            return Err(crate::error::AutoInstallError::ProcessError {
+                command: format!("bash {}", mount_script.display()),
+                exit_code: output.status.code(),
+                stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+            });
         }
 
-        debug!("Netboot tarball extracted successfully");
+        // Clean up mount script
+        let _ = fs::remove_file(mount_script).await;
 
-        // List extracted files for debugging
-        let mut entries = tokio::fs::read_dir(extract_dir).await
-            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
-
-        debug!("Contents of extracted netboot directory:");
-        while let Some(entry) = entries.next_entry().await
-            .map_err(|e| crate::error::AutoInstallError::IoError(e))? {
-            debug!("  {}", entry.file_name().to_string_lossy());
-        }
-
+        info!("Successfully extracted boot files from Ubuntu Server ISO");
         Ok(())
     }
 

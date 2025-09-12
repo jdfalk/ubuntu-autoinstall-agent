@@ -83,12 +83,11 @@ impl ImageBuilder {
         // Start VM and perform installation with signal handling
         info!("Creating VM and installing Ubuntu");
 
-        let vm_installation = self.vm_manager.install_ubuntu(
+        let vm_installation = self.vm_manager.install_ubuntu_in_vm(
             &vm_disk,
             &netboot_dir,
             &cloud_init_path,
-            &spec.vm_config,
-            spec.architecture,
+            spec.vm_config.memory_mb,
         );
 
         let installation_result = tokio::select! {

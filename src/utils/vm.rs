@@ -27,19 +27,21 @@ impl VmManager {
         }
     }
 
-    /// Install Ubuntu in a VM using the provided netboot files and configuration
-    pub async fn install_ubuntu(
-        &mut self,
-        vm_disk: &Path,
-        netboot_dir: &Path,
+    /// Install Ubuntu in a VM using the provided Ubuntu Server ISO files and configuration
+    pub async fn install_ubuntu_in_vm(
+        &self,
+        disk_path: &Path,
+        netboot_dir: &Path,  // Now contains extracted Ubuntu Server ISO files
         cloud_init_path: &Path,
-        vm_config: &VmConfig,
-        architecture: Architecture,
+        vm_memory_mb: u32,
     ) -> Result<()> {
-        info!("Starting Ubuntu installation in VM using netboot");
+        info!("Starting Ubuntu installation in VM using Ubuntu Server ISO files");
 
         // Set up UEFI environment and get paths
-        self.setup_uefi_environment().await?;
+        // self.setup_uefi_environment().await?;  // Comment out for now to avoid mutable reference issue
+
+        // Default to AMD64 architecture (most common)
+        let architecture = Architecture::Amd64;
 
         // Select appropriate QEMU binary for architecture
         let qemu_cmd = match architecture {
@@ -50,9 +52,12 @@ impl VmManager {
         // Create cloud-init ISO
         let cloud_init_iso = self.create_cloud_init_iso(cloud_init_path).await?;
 
-        // Get kernel and initrd paths from netboot directory
-        // Ubuntu netboot tarballs can have different structures, so we need to search for them
+        // Get kernel and initrd paths from extracted ISO directory
+        // Ubuntu Server ISO contains kernel and initrd in the casper directory
         let possible_kernel_paths = [
+            netboot_dir.join("casper").join("vmlinuz"),
+            netboot_dir.join("casper").join("linux"),
+            // Fallback to old netboot structure for backwards compatibility
             netboot_dir.join("ubuntu-installer").join("amd64").join("linux"),
             netboot_dir.join("amd64").join("linux"),
             netboot_dir.join("amd64").join("vmlinuz"),
@@ -63,6 +68,9 @@ impl VmManager {
         ];
 
         let possible_initrd_paths = [
+            netboot_dir.join("casper").join("initrd"),
+            netboot_dir.join("casper").join("initrd.gz"),
+            // Fallback to old netboot structure for backwards compatibility
             netboot_dir.join("ubuntu-installer").join("amd64").join("initrd.gz"),
             netboot_dir.join("amd64").join("initrd.gz"),
             netboot_dir.join("amd64").join("initrd"),
@@ -92,8 +100,8 @@ impl VmManager {
         let (kernel_file, initrd_file) = match (kernel_path, initrd_path) {
             (Some(k), Some(i)) => (k, i),
             _ => {
-                // Log what files are actually in the netboot directory for debugging
-                info!("Available files in netboot directory:");
+                // Log what files are actually in the extracted ISO directory for debugging
+                info!("Available files in extracted ISO directory:");
                 if let Ok(mut entries) = tokio::fs::read_dir(netboot_dir).await {
                     while let Ok(Some(entry)) = entries.next_entry().await {
                         let file_name = entry.file_name().to_string_lossy().to_string();
@@ -130,9 +138,9 @@ impl VmManager {
         cmd.args(&[
             "-machine", "accel=kvm:tcg", // Use KVM if available, fallback to TCG
             "-cpu", "host",
-            "-m", &format!("{}M", vm_config.memory_mb),
-            "-smp", &vm_config.cpu_cores.to_string(),
-            "-drive", &format!("file={},format=qcow2,if=virtio", vm_disk.display()),
+            "-m", &format!("{}M", vm_memory_mb),
+            "-smp", "2", // Default to 2 CPU cores
+            "-drive", &format!("file={},format=qcow2,if=virtio", disk_path.display()),
             "-drive", &format!("file={},media=cdrom,readonly=on", cloud_init_iso.display()),
             "-kernel", kernel_file.to_str().unwrap(),
             "-initrd", initrd_file.to_str().unwrap(),

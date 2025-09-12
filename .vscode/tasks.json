@@ -1,0 +1,15 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Test Updated Cloud-init Config",
+			"type": "shell",
+			"command": "cd /Users/jdfalk/repos/github.com/jdfalk/ubuntu-autoinstall-agent && cargo build --release",
+			"isBackground": false,
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "build"
+		}
+	]
+}

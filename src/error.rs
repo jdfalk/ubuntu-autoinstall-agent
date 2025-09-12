@@ -37,6 +37,13 @@ pub enum AutoInstallError {
     #[error("System error: {0}")]
     SystemError(String),
 
+    #[error("Process failed: {command} (exit code: {exit_code:?}): {stderr}")]
+    ProcessError {
+        command: String,
+        exit_code: Option<i32>,
+        stderr: String,
+    },
+
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
 
