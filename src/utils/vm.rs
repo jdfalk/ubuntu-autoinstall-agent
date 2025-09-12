@@ -136,7 +136,7 @@ impl VmManager {
             "-drive", &format!("file={},media=cdrom,readonly=on", cloud_init_iso.display()),
             "-kernel", kernel_file.to_str().unwrap(),
             "-initrd", initrd_file.to_str().unwrap(),
-            "-append", "console=ttyS0 console=tty0 autoinstall 'ds=nocloud;seedfrom=/dev/sr0/'",
+            "-append", "console=ttyS0 console=tty0 autoinstall ds=nocloud;seedfrom=/dev/sr0/",
             "-netdev", "user,id=net0",
             "-device", "virtio-net,netdev=net0",
             "-vnc", ":1", // Enable VNC on display :1 (port 5901) for debugging
@@ -248,10 +248,13 @@ impl VmManager {
                     return Ok(());
                 }
 
-                // Check for errors
-                if combined_log.contains("Failed") || combined_log.contains("Error") ||
-                   combined_log.contains("FATAL") {
-                    warn!("Possible installation error detected in logs");
+                // Check for actual installation errors (not normal kernel messages)
+                if combined_log.contains("Installation failed") ||
+                   combined_log.contains("autoinstall failed") ||
+                   combined_log.contains("FATAL ERROR") ||
+                   combined_log.contains("cloud-init failed") ||
+                   combined_log.contains("Install failed") {
+                    warn!("Installation error detected in logs");
                 }
 
                 // Log any new content for debugging
