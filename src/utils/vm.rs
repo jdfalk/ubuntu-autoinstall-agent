@@ -284,12 +284,6 @@ impl VmManager {
         }
     }
 
-    /// Send key command to QEMU via monitor
-    async fn send_key_to_vm(&self, key: &str) -> Result<()> {
-        let cmd = format!("sendkey {}", key);
-        self.send_monitor_command(&cmd).await
-    }
-
     /// Send command to QEMU monitor
     async fn send_monitor_command(&self, command: &str) -> Result<()> {
         use tokio::io::AsyncWriteExt;
