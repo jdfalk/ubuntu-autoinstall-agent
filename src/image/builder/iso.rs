@@ -125,36 +125,58 @@ impl IsoManager {
 
         info!("Creating bootable ISO from netboot files");
 
-        // Use xorriso to create a bootable ISO with UEFI support
-        let output = Command::new("xorriso")
-            .args(&[
-                "-as", "mkisofs",
-                "-r", "-V", "Ubuntu-Netboot",
-                "-o", iso_path.to_str().unwrap(),
-                "-J", "-l",
-                "-b", "isolinux/isolinux.bin",
-                "-c", "isolinux/boot.cat",
-                "-no-emul-boot",
-                "-boot-load-size", "4",
-                "-boot-info-table",
-                "-eltorito-alt-boot",
-                "-e", "boot/grub/efi.img",
-                "-no-emul-boot",
-                netboot_dir.to_str().unwrap(),
-            ])
-            .output()
-            .await
+        // First, let's check what files are actually in the netboot directory
+        let mut entries = tokio::fs::read_dir(netboot_dir).await
             .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
 
-        if !output.status.success() {
-            return Err(crate::error::AutoInstallError::IoError(
-                std::io::Error::new(std::io::ErrorKind::Other,
-                    format!("Failed to create netboot ISO: {}", String::from_utf8_lossy(&output.stderr)))
-            ));
+        debug!("Contents of netboot directory:");
+        while let Some(entry) = entries.next_entry().await
+            .map_err(|e| crate::error::AutoInstallError::IoError(e))? {
+            debug!("  {}", entry.file_name().to_string_lossy());
         }
 
-        info!("Netboot ISO created successfully: {}", iso_path.display());
-        Ok(())
+        // Use genisoimage/mkisofs instead of xorriso for better compatibility
+        // First try genisoimage, then mkisofs as fallback
+        let iso_tools = ["genisoimage", "mkisofs"];
+        let mut last_error = None;
+
+        for tool in &iso_tools {
+            let output = Command::new(tool)
+                .args(&[
+                    "-r", // Rock Ridge extensions
+                    "-J", // Joliet extensions
+                    "-l", // Allow 31 character filenames
+                    "-V", "Ubuntu-Netboot", // Volume label
+                    "-o", iso_path.to_str().unwrap(), // Output file
+                    netboot_dir.to_str().unwrap(), // Source directory
+                ])
+                .output()
+                .await;
+
+            match output {
+                Ok(result) => {
+                    if result.status.success() {
+                        info!("Netboot ISO created successfully using {}: {}", tool, iso_path.display());
+                        return Ok(());
+                    } else {
+                        let error_msg = format!("Failed to create netboot ISO with {}: {}", 
+                                               tool, String::from_utf8_lossy(&result.stderr));
+                        debug!("{}", error_msg);
+                        last_error = Some(error_msg);
+                    }
+                }
+                Err(e) => {
+                    debug!("Tool {} not available: {}", tool, e);
+                    last_error = Some(format!("Tool {} not available: {}", tool, e));
+                }
+            }
+        }
+
+        // If all tools failed, return the last error
+        Err(crate::error::AutoInstallError::IoError(
+            std::io::Error::new(std::io::ErrorKind::Other,
+                last_error.unwrap_or_else(|| "No ISO creation tools available".to_string()))
+        ))
     }
 
     /// Download file with progress

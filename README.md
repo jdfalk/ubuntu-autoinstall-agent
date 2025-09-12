@@ -209,7 +209,7 @@ All deployments use LUKS full disk encryption by default:
 - Rust 1.70+
 - QEMU/KVM (for image building)
 - SSH keys configured for target access
-- xorriso (for creating bootable ISOs from netboot files)
+- ISO creation tools (one of: genisoimage, mkisofs, or xorriso)
 - tar (for extracting netboot tarballs)
 
 ### Optional: uutils/coreutils for Enhanced Reliability
