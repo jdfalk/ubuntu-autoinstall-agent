@@ -14,16 +14,14 @@ use tracing::{info, debug, warn};
 
 /// VM manager for creating and running virtual machines
 pub struct VmManager {
-    ovmf_code_path: Option<String>,
-    ovmf_vars_path: Option<String>,
+    // Using direct kernel boot approach, no UEFI required
 }
 
 impl VmManager {
     /// Create a new VM manager
     pub fn new() -> Self {
         Self {
-            ovmf_code_path: None,
-            ovmf_vars_path: None,
+            // Using direct kernel boot approach
         }
     }
 
@@ -36,9 +34,6 @@ impl VmManager {
         vm_memory_mb: u32,
     ) -> Result<()> {
         info!("Starting Ubuntu installation in VM using Ubuntu Server ISO files");
-
-        // Set up UEFI environment and get paths
-        // self.setup_uefi_environment().await?;  // Comment out for now to avoid mutable reference issue
 
         // Default to AMD64 architecture (most common)
         let architecture = Architecture::Amd64;
@@ -313,73 +308,6 @@ impl VmManager {
                 Ok(()) // Non-fatal, continue
             }
         }
-    }
-
-    /// Set up UEFI environment for VM
-    async fn setup_uefi_environment(&mut self) -> Result<()> {
-        use tokio::fs;
-
-        // Try to find OVMF files in common locations
-        let ovmf_paths = [
-            // Ubuntu/Debian (newer 4M format)
-            ("/usr/share/OVMF/OVMF_CODE_4M.fd", "/usr/share/OVMF/OVMF_VARS_4M.fd"),
-            // Ubuntu/Debian (legacy 2M format)
-            ("/usr/share/OVMF/OVMF_CODE.fd", "/usr/share/OVMF/OVMF_VARS.fd"),
-            // Ubuntu/Debian (alternative paths)
-            ("/usr/share/ovmf/OVMF.fd", "/usr/share/OVMF/OVMF_VARS_4M.fd"),
-            ("/usr/share/qemu/OVMF.fd", "/usr/share/OVMF/OVMF_VARS_4M.fd"),
-            // Fedora/RHEL
-            ("/usr/share/edk2/ovmf/OVMF_CODE.fd", "/usr/share/edk2/ovmf/OVMF_VARS.fd"),
-            // Arch Linux
-            ("/usr/share/ovmf/x64/OVMF_CODE.fd", "/usr/share/ovmf/x64/OVMF_VARS.fd"),
-            // macOS (Homebrew)
-            ("/opt/homebrew/share/qemu/edk2-x86_64-code.fd", "/opt/homebrew/share/qemu/edk2-i386-vars.fd"),
-            ("/usr/local/share/qemu/edk2-x86_64-code.fd", "/usr/local/share/qemu/edk2-i386-vars.fd"),
-        ];
-
-        let mut ovmf_code_path = None;
-        let mut ovmf_vars_template = None;
-
-        // Find available OVMF files
-        for (code_path, vars_path) in &ovmf_paths {
-            if fs::try_exists(code_path).await.unwrap_or(false) &&
-               fs::try_exists(vars_path).await.unwrap_or(false) {
-                ovmf_code_path = Some(code_path);
-                ovmf_vars_template = Some(vars_path);
-                debug!("Found OVMF files at: {} and {}", code_path, vars_path);
-                break;
-            }
-        }
-
-        let (ovmf_code, ovmf_vars_src) = match (ovmf_code_path, ovmf_vars_template) {
-            (Some(code), Some(vars)) => (code, vars),
-            _ => {
-                return Err(crate::error::AutoInstallError::VmError(
-                    "OVMF UEFI firmware not found. Please install OVMF/EDK2:\n\
-                     Ubuntu/Debian: sudo apt install ovmf\n\
-                     Fedora/RHEL: sudo dnf install edk2-ovmf\n\
-                     Arch Linux: sudo pacman -S edk2-ovmf\n\
-                     macOS: brew install qemu".to_string()
-                ));
-            }
-        };
-
-        // Store the paths for later use
-        self.ovmf_code_path = Some(ovmf_code.to_string());
-        self.ovmf_vars_path = Some(ovmf_vars_src.to_string());
-
-        // Copy OVMF_VARS.fd to temporary writable location
-        let ovmf_vars_runtime = "/tmp/OVMF_VARS.fd";
-        fs::copy(ovmf_vars_src, ovmf_vars_runtime).await
-            .map_err(|e| crate::error::AutoInstallError::VmError(
-                format!("Failed to copy OVMF_VARS.fd: {}", e)
-            ))?;
-
-        debug!("UEFI environment set up successfully");
-        debug!("OVMF_CODE: {}", ovmf_code);
-        debug!("OVMF_VARS: {}", ovmf_vars_runtime);
-
-        Ok(())
     }
 
     /// Shutdown QEMU gracefully
