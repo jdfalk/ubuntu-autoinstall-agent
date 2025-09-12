@@ -1,5 +1,5 @@
 // file: src/cli/args.rs
-// version: 1.0.0
+// version: 1.1.0
 // guid: f6g7h8i9-j0k1-2345-6789-012345fghijk
 
 //! Command line argument definitions
@@ -84,6 +84,24 @@ pub enum Commands {
         older_than_days: u32,
 
         #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Install Ubuntu via SSH to target machine
+    SshInstall {
+        #[arg(short, long, help = "Target machine IP address or hostname")]
+        host: String,
+
+        #[arg(short = 'n', long, help = "Target hostname for the installation")]
+        hostname: Option<String>,
+
+        #[arg(short, long, default_value = "ubuntu", help = "SSH username")]
+        username: Option<String>,
+
+        #[arg(long, help = "Only investigate system, don't install")]
+        investigate_only: bool,
+
+        #[arg(long, help = "Show what would be done without actually doing it")]
         dry_run: bool,
     },
 }

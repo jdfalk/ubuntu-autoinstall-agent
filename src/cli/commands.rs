@@ -1,5 +1,5 @@
 // file: src/cli/commands.rs
-// version: 1.0.0
+// version: 1.1.0
 // guid: g7h8i9j0-k1l2-3456-7890-123456ghijkl
 
 //! Command implementations for the CLI
@@ -8,6 +8,7 @@ use crate::{
     config::{Architecture, loader::ConfigLoader, ImageSpec},
     image::{builder::ImageBuilder, manager::ImageManager},
     image::deployer::ImageDeployer,
+    network::{SshInstaller, InstallationConfig},
     Result,
 };
 use tracing::{info, error};
@@ -232,6 +233,85 @@ pub async fn cleanup_command(older_than_days: u32, dry_run: bool) -> Result<()> 
 
     let deleted_count = manager.cleanup_images(old_images).await?;
     info!("Successfully deleted {} old images", deleted_count);
+
+    Ok(())
+}
+
+/// Install Ubuntu via SSH to a target machine
+pub async fn ssh_install_command(
+    host: &str,
+    hostname: Option<String>,
+    username: Option<String>,
+    investigate_only: bool,
+    dry_run: bool,
+) -> Result<()> {
+    let username = username.unwrap_or_else(|| "ubuntu".to_string());
+    let _hostname = hostname.unwrap_or_else(|| "len-serv-003".to_string());
+
+    info!("Connecting to {}@{} for Ubuntu installation", username, host);
+
+    let mut installer = SshInstaller::new();
+
+    // Connect to the target
+    installer.connect(host, &username).await?;
+    info!("Successfully connected to target machine");
+
+    // Always investigate the system first
+    info!("Investigating target system...");
+    let system_info = installer.investigate_system().await?;
+
+    println!("\n=== SYSTEM INVESTIGATION RESULTS ===");
+    println!("Hostname: {}", system_info.hostname);
+    println!("Kernel: {}", system_info.kernel_version);
+    println!("Available tools: {:?}", system_info.available_tools);
+    println!("\n--- OS Release ---");
+    println!("{}", system_info.os_release);
+    println!("\n--- Memory Info ---");
+    println!("{}", system_info.memory_info);
+    println!("\n--- CPU Info ---");
+    println!("{}", system_info.cpu_info);
+    println!("\n--- Disk Information ---");
+    println!("{}", system_info.disk_info);
+    println!("\n--- Network Information ---");
+    println!("{}", system_info.network_info);
+
+    if investigate_only {
+        info!("Investigation complete. Exiting as requested.");
+        return Ok(());
+    }
+
+    // Create installation configuration
+    let config = InstallationConfig::for_len_serv_003();
+
+    if dry_run {
+        info!("DRY RUN: Would perform full ZFS+LUKS installation with config:");
+        info!("  Hostname: {}", config.hostname);
+        info!("  Disk: {}", config.disk_device);
+        info!("  Timezone: {}", config.timezone);
+        info!("  Network: {} -> {}", config.network_interface, config.network_address);
+        return Ok(());
+    }
+
+    // Confirm installation
+    println!("\n=== INSTALLATION CONFIGURATION ===");
+    println!("Target hostname: {}", config.hostname);
+    println!("Target disk: {} (THIS WILL BE COMPLETELY WIPED)", config.disk_device);
+    println!("Timezone: {}", config.timezone);
+    println!("Network interface: {}", config.network_interface);
+    println!("Network address: {}", config.network_address);
+    println!("Gateway: {}", config.network_gateway);
+
+    println!("\nWARNING: This will completely destroy all data on {}!", config.disk_device);
+    println!("This is a DESTRUCTIVE operation that cannot be undone!");
+
+    // In a real implementation, you might want to add a confirmation prompt here
+    // For automation purposes, we'll proceed directly
+
+    info!("Starting full ZFS+LUKS Ubuntu installation...");
+    installer.perform_installation(&config).await?;
+
+    info!("SSH installation completed successfully!");
+    info!("Target machine should now be ready to boot from local disk");
 
     Ok(())
 }

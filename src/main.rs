@@ -56,6 +56,11 @@ async fn main() -> Result<()> {
             } => {
                 cleanup_command(older_than_days, dry_run).await
             }
+            ubuntu_autoinstall_agent::cli::args::Commands::SshInstall {
+                host, hostname, username, investigate_only, dry_run
+            } => {
+                ssh_install_command(&host, hostname, username, investigate_only, dry_run).await
+            }
         }
     };
 
