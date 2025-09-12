@@ -54,6 +54,9 @@ impl VmManager {
         // Ubuntu netboot tarballs can have different structures, so we need to search for them
         let possible_kernel_paths = [
             netboot_dir.join("ubuntu-installer").join("amd64").join("linux"),
+            netboot_dir.join("amd64").join("linux"),
+            netboot_dir.join("amd64").join("vmlinuz"),
+            netboot_dir.join("amd64").join("kernel"),
             netboot_dir.join("linux"),
             netboot_dir.join("vmlinuz"),
             netboot_dir.join("kernel"),
@@ -61,6 +64,8 @@ impl VmManager {
 
         let possible_initrd_paths = [
             netboot_dir.join("ubuntu-installer").join("amd64").join("initrd.gz"),
+            netboot_dir.join("amd64").join("initrd.gz"),
+            netboot_dir.join("amd64").join("initrd"),
             netboot_dir.join("initrd.gz"),
             netboot_dir.join("initrd"),
         ];
@@ -91,7 +96,19 @@ impl VmManager {
                 info!("Available files in netboot directory:");
                 if let Ok(mut entries) = tokio::fs::read_dir(netboot_dir).await {
                     while let Ok(Some(entry)) = entries.next_entry().await {
-                        info!("  {}", entry.file_name().to_string_lossy());
+                        let file_name = entry.file_name().to_string_lossy().to_string();
+                        info!("  {}", file_name);
+
+                        // If this is a directory, also list its contents
+                        if entry.file_type().await.unwrap_or_else(|_| std::fs::FileType::from(std::fs::File::open("/dev/null").unwrap().metadata().unwrap().file_type())).is_dir() {
+                            let subdir_path = netboot_dir.join(&file_name);
+                            if let Ok(mut subentries) = tokio::fs::read_dir(&subdir_path).await {
+                                info!("    Contents of {}:", file_name);
+                                while let Ok(Some(subentry)) = subentries.next_entry().await {
+                                    info!("      {}", subentry.file_name().to_string_lossy());
+                                }
+                            }
+                        }
                     }
                 }
 
