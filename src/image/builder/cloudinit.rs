@@ -79,7 +79,20 @@ autoinstall:
         ssh_authorized_keys:
           - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDHQGvTZ8nZ8/temp-key-for-image-creation
     timezone: UTC
+  kernel:
+    package: linux-generic
+    cmdline: "console=ttyS0,115200n8 console=tty0"
+  grub:
+    terminal: "console serial"
+    terminal_input: "console serial"
+    terminal_output: "console serial"
+    serial_command: "serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"
+    cmdline_linux_default: "console=ttyS0,115200n8 console=tty0"
   late-commands:
+    # Configure GRUB for serial console
+    - echo 'GRUB_TERMINAL="console serial"' >> /target/etc/default/grub
+    - echo 'GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"' >> /target/etc/default/grub
+    - echo 'GRUB_CMDLINE_LINUX_DEFAULT="console=ttyS0,115200n8 console=tty0"' >> /target/etc/default/grub
     # Remove temporary SSH key and prepare image for generalization
     - rm -f /target/home/ubuntu/.ssh/authorized_keys
     - echo "Image creation completed at $(date)" > /target/var/log/autoinstall.log
@@ -87,6 +100,8 @@ autoinstall:
     - touch /target/etc/cloud/cloud-init.disabled && rm /target/etc/cloud/cloud-init.disabled
     # Clean up any installer logs that might contain sensitive data
     - rm -f /target/var/log/installer/autoinstall-user-data
+    # Update GRUB configuration
+    - chroot /target update-grub
   error-commands:
     - echo "Installation failed at $(date)" > /target/var/log/autoinstall-error.log
 "#, packages);

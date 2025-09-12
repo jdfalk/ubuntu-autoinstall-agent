@@ -24,7 +24,7 @@ impl IsoManager {
 
     /// Download Ubuntu ISO if not cached
     pub async fn get_ubuntu_iso(&self, spec: &ImageSpec) -> Result<PathBuf> {
-        let iso_name = format!("ubuntu-{}-live-server-{}.iso",
+        let iso_name = format!("ubuntu-{}-netboot-{}.iso",
                               spec.ubuntu_version, spec.architecture.as_str());
 
         // Create cache/isos directory for storing ISO files
@@ -39,7 +39,7 @@ impl IsoManager {
             return Ok(iso_path);
         }
 
-        info!("Downloading Ubuntu ISO to cache: {}", iso_path.display());
+        info!("Downloading Ubuntu netboot ISO to cache: {}", iso_path.display());
 
         let url = self.get_ubuntu_iso_url(spec)?;
         self.download_file(&url, &iso_path).await?;
@@ -49,15 +49,15 @@ impl IsoManager {
 
     /// Get Ubuntu ISO download URL
     fn get_ubuntu_iso_url(&self, spec: &ImageSpec) -> Result<String> {
-        // Ubuntu ISO URLs follow this pattern:
-        // https://releases.ubuntu.com/{version}/ubuntu-{version}-live-server-{arch}.iso
+        // Ubuntu netboot images for text-mode installation
+        // Format: http://archive.ubuntu.com/ubuntu/dists/{version}/main/installer-{arch}/current/legacy-images/netboot/mini.iso
         let arch_suffix = match spec.architecture {
             Architecture::Amd64 => "amd64",
             Architecture::Arm64 => "arm64",
         };
 
-        Ok(format!("https://releases.ubuntu.com/{}/ubuntu-{}-live-server-{}.iso",
-                  spec.ubuntu_version, spec.ubuntu_version, arch_suffix))
+        Ok(format!("http://archive.ubuntu.com/ubuntu/dists/{}/main/installer-{}/current/legacy-images/netboot/mini.iso",
+                  spec.ubuntu_version, arch_suffix))
     }
 
     /// Download file with progress

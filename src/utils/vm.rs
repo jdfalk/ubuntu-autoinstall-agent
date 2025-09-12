@@ -32,6 +32,9 @@ impl VmManager {
     ) -> Result<()> {
         info!("Starting Ubuntu installation in VM");
 
+        // Set up UEFI environment
+        self.setup_uefi_environment().await?;
+
         // Select appropriate QEMU binary for architecture
         let qemu_cmd = match architecture {
             Architecture::Amd64 => "qemu-system-x86_64",
@@ -48,15 +51,19 @@ impl VmManager {
             "-cpu", "host",
             "-m", &format!("{}M", vm_config.memory_mb),
             "-smp", &vm_config.cpu_cores.to_string(),
+            "-drive", &format!("if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE.fd"), // UEFI firmware
+            "-drive", &format!("if=pflash,format=raw,file=/tmp/OVMF_VARS.fd"), // UEFI variables (writable)
             "-drive", &format!("file={},format=qcow2,if=virtio", vm_disk.display()),
             "-drive", &format!("file={},media=cdrom,readonly=on", iso_path.display()),
             "-drive", &format!("file={},media=cdrom,readonly=on", cloud_init_iso.display()),
             "-boot", "d", // Boot from CD-ROM first
             "-netdev", "user,id=net0",
             "-device", "virtio-net,netdev=net0",
-            "-display", "none", // No display
+            "-vnc", ":1", // Enable VNC on display :1 (port 5901) for debugging
             "-serial", "file:/tmp/qemu-serial.log", // Log serial output to file
             "-monitor", "unix:/tmp/qemu-monitor.sock,server,nowait", // Monitor socket
+            "-global", "isa-debugcon.iobase=0x402", // UEFI debug console
+            "-debugcon", "file:/tmp/qemu-uefi.log", // UEFI debug output
             "-daemonize", // Run as daemon
         ]);
 
@@ -121,34 +128,58 @@ impl VmManager {
                 ));
             }
 
-            // Check serial log for progress indicators
-            if let Ok(log_content) = tokio::fs::read_to_string("/tmp/qemu-serial.log").await {
-                // Handle GRUB menu if not already handled
-                if !grub_handled && log_content.contains("GNU GRUB") {
-                    info!("GRUB menu detected, selecting Ubuntu installation...");
+            // Check both serial and UEFI logs for progress indicators
+            let mut combined_log = String::new();
+
+            if let Ok(serial_content) = tokio::fs::read_to_string("/tmp/qemu-serial.log").await {
+                combined_log.push_str(&serial_content);
+            }
+
+            if let Ok(uefi_content) = tokio::fs::read_to_string("/tmp/qemu-uefi.log").await {
+                combined_log.push_str(&uefi_content);
+            }
+
+            if !combined_log.is_empty() {
+                // Handle UEFI boot menu or GRUB menu if not already handled
+                if !grub_handled && (combined_log.contains("GNU GRUB") ||
+                                   combined_log.contains("UEFI") ||
+                                   combined_log.contains("Boot Menu") ||
+                                   combined_log.contains("installer")) {
+                    info!("Boot menu detected, selecting Ubuntu installation...");
                     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
                     self.send_key_to_vm("ret").await?; // Press Enter
                     grub_handled = true;
                 }
 
-                // Check for autoinstall start
-                if !installation_started && log_content.contains("autoinstall") {
-                    info!("Autoinstall process started");
+                // Check for installer activity
+                if !installation_started && (combined_log.contains("autoinstall") ||
+                                           combined_log.contains("installer") ||
+                                           combined_log.contains("d-i") ||  // debian-installer
+                                           combined_log.contains("ubuntu-installer")) {
+                    info!("Ubuntu installer process started");
                     installation_started = true;
                 }
 
                 // Check for installation completion
-                if log_content.contains("Installation finished") ||
-                   log_content.contains("reboot") ||
-                   log_content.contains("Installation complete") {
+                if combined_log.contains("Installation finished") ||
+                   combined_log.contains("reboot") ||
+                   combined_log.contains("Installation complete") ||
+                   combined_log.contains("install successful") {
                     info!("Installation completed successfully in {:?}", start_time.elapsed());
                     self.shutdown_qemu().await?;
                     return Ok(());
                 }
 
                 // Check for errors
-                if log_content.contains("Failed") || log_content.contains("Error") {
-                    warn!("Possible installation error detected in log");
+                if combined_log.contains("Failed") || combined_log.contains("Error") ||
+                   combined_log.contains("FATAL") {
+                    warn!("Possible installation error detected in logs");
+                }
+
+                // Log any new content for debugging
+                if combined_log.len() > 100 {
+                    let last_lines: Vec<&str> = combined_log.lines().rev().take(5).collect();
+                    debug!("Recent log activity: {:?}", last_lines);
                 }
             }
 
@@ -188,6 +219,31 @@ impl VmManager {
                 Ok(()) // Non-fatal, continue
             }
         }
+    }
+
+    /// Set up UEFI environment for VM
+    async fn setup_uefi_environment(&self) -> Result<()> {
+        use tokio::fs;
+
+        // Copy OVMF_VARS.fd to /tmp for writable UEFI variables
+        let ovmf_vars_template = "/usr/share/OVMF/OVMF_VARS.fd";
+        let ovmf_vars_runtime = "/tmp/OVMF_VARS.fd";
+
+        // Check if OVMF files exist
+        if !fs::try_exists("/usr/share/OVMF/OVMF_CODE.fd").await.unwrap_or(false) {
+            return Err(crate::error::AutoInstallError::VmError(
+                "OVMF UEFI firmware not found. Install ovmf package.".to_string()
+            ));
+        }
+
+        // Copy OVMF_VARS.fd to temporary writable location
+        fs::copy(ovmf_vars_template, ovmf_vars_runtime).await
+            .map_err(|e| crate::error::AutoInstallError::VmError(
+                format!("Failed to copy OVMF_VARS.fd: {}", e)
+            ))?;
+
+        debug!("UEFI environment set up successfully");
+        Ok(())
     }
 
     /// Shutdown QEMU gracefully
