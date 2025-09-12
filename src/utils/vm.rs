@@ -27,16 +27,16 @@ impl VmManager {
         }
     }
 
-    /// Install Ubuntu in a VM using the provided ISO and configuration
+    /// Install Ubuntu in a VM using the provided netboot files and configuration
     pub async fn install_ubuntu(
         &mut self,
         vm_disk: &Path,
-        iso_path: &Path,
+        netboot_dir: &Path,
         cloud_init_path: &Path,
         vm_config: &VmConfig,
         architecture: Architecture,
     ) -> Result<()> {
-        info!("Starting Ubuntu installation in VM");
+        info!("Starting Ubuntu installation in VM using netboot");
 
         // Set up UEFI environment and get paths
         self.setup_uefi_environment().await?;
@@ -50,33 +50,36 @@ impl VmManager {
         // Create cloud-init ISO
         let cloud_init_iso = self.create_cloud_init_iso(cloud_init_path).await?;
 
-        // Get OVMF paths (should be set by setup_uefi_environment)
-        let ovmf_code = self.ovmf_code_path.as_ref()
-            .ok_or_else(|| crate::error::AutoInstallError::VmError(
-                "OVMF code path not initialized".to_string()
-            ))?;
-        let ovmf_vars = "/tmp/OVMF_VARS.fd"; // Always use temp location for vars
+        // Get kernel and initrd paths from netboot directory
+        let kernel_path = netboot_dir.join("ubuntu-installer").join("amd64").join("linux");
+        let initrd_path = netboot_dir.join("ubuntu-installer").join("amd64").join("initrd.gz");
 
-        // Build QEMU command with VNC display and monitor for automation
+        if !kernel_path.exists() || !initrd_path.exists() {
+            return Err(crate::error::AutoInstallError::VmError(
+                format!("Netboot kernel or initrd not found in {}", netboot_dir.display())
+            ));
+        }
+
+        info!("Using kernel: {}", kernel_path.display());
+        info!("Using initrd: {}", initrd_path.display());
+
+        // Build QEMU command with direct kernel boot (no UEFI needed for netboot)
         let mut cmd = Command::new(qemu_cmd);
         cmd.args(&[
             "-machine", "accel=kvm:tcg", // Use KVM if available, fallback to TCG
             "-cpu", "host",
             "-m", &format!("{}M", vm_config.memory_mb),
             "-smp", &vm_config.cpu_cores.to_string(),
-            "-drive", &format!("if=pflash,format=raw,readonly=on,file={}", ovmf_code), // UEFI firmware
-            "-drive", &format!("if=pflash,format=raw,file={}", ovmf_vars), // UEFI variables (writable)
             "-drive", &format!("file={},format=qcow2,if=virtio", vm_disk.display()),
-            "-drive", &format!("file={},media=cdrom,readonly=on", iso_path.display()),
             "-drive", &format!("file={},media=cdrom,readonly=on", cloud_init_iso.display()),
-            "-boot", "d", // Boot from CD-ROM first
+            "-kernel", kernel_path.to_str().unwrap(),
+            "-initrd", initrd_path.to_str().unwrap(),
+            "-append", "console=ttyS0 console=tty0 autoinstall 'ds=nocloud;seedfrom=/dev/sr0/'",
             "-netdev", "user,id=net0",
             "-device", "virtio-net,netdev=net0",
             "-vnc", ":1", // Enable VNC on display :1 (port 5901) for debugging
             "-serial", "file:/tmp/qemu-serial.log", // Log serial output to file
             "-monitor", "unix:/tmp/qemu-monitor.sock,server,nowait", // Monitor socket
-            "-global", "isa-debugcon.iobase=0x402", // UEFI debug console
-            "-debugcon", "file:/tmp/qemu-uefi.log", // UEFI debug output
             "-daemonize", // Run as daemon
         ]);
 

@@ -26,13 +26,10 @@ impl IsoManager {
 
     /// Download Ubuntu netboot files if not cached
     pub async fn get_ubuntu_iso(&self, spec: &ImageSpec) -> Result<PathBuf> {
-        // For netboot, we'll create a bootable ISO from the extracted tarball
+        // For netboot, we'll extract the tarball and return the kernel path for direct booting
         let netboot_dir = self.cache_dir.join("netboot").join(format!("ubuntu-{}-{}",
                                                                      spec.ubuntu_version,
                                                                      spec.architecture.as_str()));
-        let iso_name = format!("ubuntu-{}-netboot-{}.iso",
-                              spec.ubuntu_version, spec.architecture.as_str());
-        let iso_path = self.cache_dir.join("isos").join(&iso_name);
 
         // Create cache directories
         fs::create_dir_all(&self.cache_dir.join("isos")).await
@@ -40,12 +37,14 @@ impl IsoManager {
         fs::create_dir_all(&netboot_dir).await
             .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
 
-        if iso_path.exists() {
-            info!("Using cached netboot ISO: {}", iso_path.display());
-            return Ok(iso_path);
+        // Check if netboot files already extracted
+        let kernel_path = netboot_dir.join("ubuntu-installer").join("amd64").join("linux");
+        if kernel_path.exists() {
+            info!("Using cached netboot files: {}", netboot_dir.display());
+            return Ok(netboot_dir);
         }
 
-        info!("Downloading and creating Ubuntu netboot ISO: {}", iso_path.display());
+        info!("Downloading and extracting Ubuntu netboot files: {}", netboot_dir.display());
 
         // Download netboot tarball
         let tarball_url = self.get_netboot_tarball_url(spec)?;
@@ -61,13 +60,8 @@ impl IsoManager {
         // Extract tarball
         self.extract_netboot_tarball(&tarball_path, &netboot_dir).await?;
 
-        // Create bootable ISO from extracted files
-        self.create_netboot_iso(&netboot_dir, &iso_path).await?;
-
-        Ok(iso_path)
-    }
-
-    /// Get Ubuntu netboot tarball download URL
+        Ok(netboot_dir)
+    }    /// Get Ubuntu netboot tarball download URL
     fn get_netboot_tarball_url(&self, spec: &ImageSpec) -> Result<String> {
         // Ubuntu netboot tarball URLs follow this pattern:
         // https://releases.ubuntu.com/{codename}/ubuntu-{version}-netboot-{arch}.tar.gz
@@ -119,58 +113,7 @@ impl IsoManager {
         Ok(())
     }
 
-    /// Create bootable ISO from netboot files
-    async fn create_netboot_iso(&self, netboot_dir: &Path, iso_path: &Path) -> Result<()> {
-        use tokio::process::Command;
-
-        info!("Creating bootable ISO from netboot files");
-
-        // Try genisoimage first (most common), then mkisofs as fallback
-        let tools = [
-            ("genisoimage", vec![
-                "-r", "-J", "-l",
-                "-V", "Ubuntu-Netboot",
-                "-o", iso_path.to_str().unwrap(),
-                netboot_dir.to_str().unwrap()
-            ]),
-            ("mkisofs", vec![
-                "-r", "-J", "-l",
-                "-V", "Ubuntu-Netboot",
-                "-o", iso_path.to_str().unwrap(),
-                netboot_dir.to_str().unwrap()
-            ]),
-        ];
-
-        for (tool_name, args) in &tools {
-            debug!("Trying ISO creation with: {}", tool_name);
-
-            let result = Command::new(tool_name)
-                .args(args)
-                .output()
-                .await;
-
-            match result {
-                Ok(output) if output.status.success() => {
-                    info!("Netboot ISO created successfully using {}: {}", tool_name, iso_path.display());
-                    return Ok(());
-                }
-                Ok(output) => {
-                    debug!("Tool {} failed: {}", tool_name, String::from_utf8_lossy(&output.stderr));
-                }
-                Err(e) => {
-                    debug!("Tool {} not available: {}", tool_name, e);
-                }
-            }
-        }
-
-        Err(crate::error::AutoInstallError::IoError(
-            std::io::Error::new(std::io::ErrorKind::Other,
-                "No ISO creation tools available. Please install one of: genisoimage, mkisofs, or xorriso.\n\
-                 On Ubuntu/Debian: sudo apt install genisoimage\n\
-                 On macOS: brew install cdrtools\n\
-                 On RHEL/CentOS: sudo yum install genisoimage")
-        ))
-    }    /// Download file with progress
+    /// Download file with progress
     async fn download_file(&self, url: &str, dest: &Path) -> Result<()> {
         let downloader = NetworkDownloader::new();
         downloader.download_with_progress(url, dest).await

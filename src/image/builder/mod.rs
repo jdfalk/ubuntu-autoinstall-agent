@@ -70,8 +70,8 @@ impl ImageBuilder {
         let cloudinit_manager = CloudInitManager::new(self.work_dir.clone());
         let postprocessor = PostProcessor::new(self.work_dir.clone(), self.cache_dir.clone());
 
-        // Download Ubuntu ISO
-        let iso_path = iso_manager.get_ubuntu_iso(&spec).await?;
+        // Download Ubuntu netboot files
+        let netboot_dir = iso_manager.get_ubuntu_iso(&spec).await?;
 
         // Create VM disk
         let vm_disk = disk_manager.get_vm_disk_path();
@@ -84,7 +84,7 @@ impl ImageBuilder {
         info!("Creating VM and installing Ubuntu");
         self.vm_manager.install_ubuntu(
             &vm_disk,
-            &iso_path,
+            &netboot_dir,
             &cloud_init_path,
             &spec.vm_config,
             spec.architecture,
