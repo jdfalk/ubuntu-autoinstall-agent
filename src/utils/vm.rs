@@ -320,7 +320,7 @@ impl VmManager {
     }
 
     /// Kill QEMU process forcefully
-    async fn kill_qemu(&self) -> Result<()> {
+    pub async fn kill_qemu(&self) -> Result<()> {
         info!("Forcefully terminating QEMU VM");
 
         // Find and kill QEMU process

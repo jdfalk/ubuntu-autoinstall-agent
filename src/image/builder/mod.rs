@@ -80,15 +80,29 @@ impl ImageBuilder {
         // Create cloud-init config for automated installation
         let cloud_init_path = cloudinit_manager.create_cloud_init_config(&spec).await?;
 
-        // Start VM and perform installation
+        // Start VM and perform installation with signal handling
         info!("Creating VM and installing Ubuntu");
-        self.vm_manager.install_ubuntu(
+
+        let vm_installation = self.vm_manager.install_ubuntu(
             &vm_disk,
             &netboot_dir,
             &cloud_init_path,
             &spec.vm_config,
             spec.architecture,
-        ).await?;
+        );
+
+        let installation_result = tokio::select! {
+            result = vm_installation => result,
+            _ = tokio::signal::ctrl_c() => {
+                // If interrupted, cleanup VM and return error
+                let _ = self.vm_manager.kill_qemu().await;
+                return Err(crate::error::AutoInstallError::VmError(
+                    "VM installation interrupted by user".to_string()
+                ));
+            }
+        };
+
+        installation_result?;
 
         // Generalize the image (remove machine-specific data)
         postprocessor.generalize_image(&vm_disk).await?;
