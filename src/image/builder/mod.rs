@@ -1,5 +1,5 @@
 // file: src/image/builder/mod.rs
-// version: 1.0.0
+// version: 1.0.1
 // guid: e1e2e3e4-f5f6-7890-1234-567890efghij
 
 //! Modular image builder implementation
@@ -120,9 +120,9 @@ impl ImageBuilder {
     async fn setup_work_dir(&self) -> Result<()> {
         // Create both work and cache directories
         fs::create_dir_all(&self.work_dir).await
-            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+            .map_err(crate::error::AutoInstallError::IoError)?;
         fs::create_dir_all(&self.cache_dir).await
-            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+            .map_err(crate::error::AutoInstallError::IoError)?;
 
         debug!("Work directory created: {}", self.work_dir.display());
         debug!("Cache directory: {}", self.cache_dir.display());
@@ -133,7 +133,7 @@ impl ImageBuilder {
     async fn cleanup_work_dir(&self) -> Result<()> {
         if self.work_dir.exists() {
             fs::remove_dir_all(&self.work_dir).await
-                .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+                .map_err(crate::error::AutoInstallError::IoError)?;
             debug!("Cleaned up work directory");
         }
         Ok(())
