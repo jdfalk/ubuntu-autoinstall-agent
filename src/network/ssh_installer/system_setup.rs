@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/system_setup.rs
-// version: 1.3.0
+// version: 1.4.0
 // guid: sshsys01-2345-6789-abcd-ef0123456789
 
 //! System setup and configuration for SSH installation
@@ -123,6 +123,13 @@ impl<'a> SystemConfigurator<'a> {
         let _ = self.log_and_execute("Binding /proc", "[ -d /mnt/targetos/proc ] || mkdir -p /mnt/targetos/proc; mountpoint -q /mnt/targetos/proc || mount --bind /proc /mnt/targetos/proc").await;
         let _ = self.log_and_execute("Binding /sys", "[ -d /mnt/targetos/sys ] || mkdir -p /mnt/targetos/sys; mountpoint -q /mnt/targetos/sys || mount --bind /sys /mnt/targetos/sys").await;
 
+        // Fix DNS inside chroot: resolv.conf is often a broken symlink in a chroot
+        // Remove it and write a simple resolv.conf with public DNS to ensure apt can resolve
+        let _ = self.log_and_execute(
+            "Reset chroot resolv.conf",
+            "[ -e /mnt/targetos/etc/resolv.conf ] && rm -f /mnt/targetos/etc/resolv.conf; echo 'nameserver 1.1.1.1' > /mnt/targetos/etc/resolv.conf"
+        ).await;
+
         // Install essential packages
         let chroot_commands = vec![
             "apt update",
@@ -132,15 +139,17 @@ impl<'a> SystemConfigurator<'a> {
         ];
 
         for cmd in chroot_commands {
-            let _ = self.log_and_execute(&format!("Chroot: {}", cmd), &format!("chroot /mnt/targetos {}", cmd)).await;
+            let _ = self.log_and_execute(&format!("Chroot: {}", cmd), &format!("chroot /mnt/targetos bash -lc '{}'", cmd)).await;
         }
 
         // Set root password
-        let _ = self.log_and_execute("Setting root password",
-            &format!("chroot /mnt/targetos bash -c \"echo 'root:{}' | chpasswd\"", config.root_password)).await;
+        let _ = self.log_and_execute(
+            "Setting root password",
+            &format!("chroot /mnt/targetos bash -lc \"echo 'root:{}' | chpasswd\"", config.root_password)
+        ).await;
 
     // Enable SSH (ignore failure if systemd not fully present yet)
-    let _ = self.log_and_execute("Enabling SSH", "chroot /mnt/targetos systemctl enable ssh").await;
+    let _ = self.log_and_execute("Enabling SSH", "chroot /mnt/targetos bash -lc 'systemctl enable ssh'").await;
 
         Ok(())
     }
@@ -159,7 +168,7 @@ impl<'a> SystemConfigurator<'a> {
 
         for cmd in zfs_commands {
             // Best-effort: some services may not exist until packages are installed
-            let _ = self.log_and_execute(&format!("ZFS: {}", cmd), &format!("chroot /mnt/targetos {}", cmd)).await;
+            let _ = self.log_and_execute(&format!("ZFS: {}", cmd), &format!("chroot /mnt/targetos bash -lc '{}'", cmd)).await;
         }
 
         Ok(())
@@ -170,10 +179,12 @@ impl<'a> SystemConfigurator<'a> {
         info!("Configuring GRUB in chroot");
 
         // Update GRUB configuration
-        self.log_and_execute("Installing GRUB to ESP",
-            "chroot /mnt/targetos grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=ubuntu --recheck").await?;
+        self.log_and_execute(
+            "Installing GRUB to ESP",
+            "chroot /mnt/targetos bash -lc 'grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=ubuntu --recheck'"
+        ).await?;
 
-        self.log_and_execute("Updating GRUB config", "chroot /mnt/targetos update-grub").await?;
+        self.log_and_execute("Updating GRUB config", "chroot /mnt/targetos bash -lc 'update-grub'").await?;
 
         Ok(())
     }
