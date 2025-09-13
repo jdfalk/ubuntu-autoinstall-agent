@@ -1,5 +1,5 @@
 // file: tests/integration_test.rs
-// version: 1.0.0
+// version: 1.0.1
 // guid: z6a7b8c9-d0e1-2345-6789-012345zabcde
 
 //! Integration tests for Ubuntu AutoInstall Agent
@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 use tempfile::TempDir;
 use ubuntu_autoinstall_agent::{
-    config::{Architecture, ImageSpec, TargetConfig, loader::ConfigLoader},
+  config::{Architecture, TargetConfig, loader::ConfigLoader},
     image::manager::ImageManager,
     Result,
 };
@@ -15,7 +15,7 @@ use ubuntu_autoinstall_agent::{
 #[tokio::test]
 async fn test_config_loading_integration() -> Result<()> {
     let temp_dir = TempDir::new().unwrap();
-    
+
     // Create a test target config file
     let config_content = r#"
 hostname: test-server
@@ -59,7 +59,7 @@ packages:
 #[tokio::test]
 async fn test_image_spec_loading() -> Result<()> {
     let temp_dir = TempDir::new().unwrap();
-    
+
     // Create a test image spec file
     let spec_content = r#"
 ubuntu_version: "24.04"
@@ -133,7 +133,7 @@ async fn test_image_manager_workflow() -> Result<()> {
 #[tokio::test]
 async fn test_environment_variable_substitution() -> Result<()> {
     let temp_dir = TempDir::new().unwrap();
-    
+
     // Create config with environment variable
     let config_content = r#"
 hostname: test-server
@@ -177,7 +177,7 @@ packages:
 #[tokio::test]
 async fn test_missing_environment_variable() {
     let temp_dir = TempDir::new().unwrap();
-    
+
     // Create config with missing environment variable
     let config_content = r#"
 hostname: test-server

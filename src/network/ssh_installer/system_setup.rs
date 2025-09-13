@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/system_setup.rs
-// version: 1.13.0
+// version: 1.13.1
 // guid: sshsys01-2345-6789-abcd-ef0123456789
 
 //! System setup and configuration for SSH installation
@@ -22,7 +22,10 @@ impl<'a> SystemConfigurator<'a> {
     fn build_esp_detection_command(guid: &str) -> String {
         // Use lsblk key=value format (-P) and grep/sed to extract PATH for the matching PARTTYPE.
         // Safe quoting: outer bash uses double quotes; sed uses single quotes containing double quotes.
-    format!(r##"bash -lc "lsblk -rP -o PATH,PARTTYPE | grep -i 'PARTTYPE="{0}"' | head -n1 | sed -n 's/.*PATH="\([^" ]*\)".*/\1/p'""##, guid)
+            format!(
+                "bash -lc 'lsblk -rP -o PATH,PARTTYPE | grep -i \"PARTTYPE=\\\"{0}\\\"\" | head -n1 | sed -n \"s/.*PATH=\\\"\\([^\\\" ]*\\)\\\".*/\\1/p\"'",
+                guid
+            )
     }
 
     /// Decide which ESP partition path to use based on detection output
@@ -383,12 +386,12 @@ mod tests {
         let guid = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b";
         let cmd = SystemConfigurator::build_esp_detection_command(guid);
         // Basic sanity of structure
-        assert!(cmd.starts_with("bash -lc \""), "command should start with bash -lc");
+    assert!(cmd.starts_with("bash -lc '"), "command should start with bash -lc and single quote");
         assert!(cmd.contains("lsblk -rP -o PATH,PARTTYPE"));
-        assert!(cmd.contains("grep -i 'PARTTYPE=\""));
+    assert!(cmd.contains("grep -i \"PARTTYPE=\\\""));
         assert!(cmd.contains(guid));
-        assert!(cmd.contains("sed -n 's/.*PATH=\""));
-        assert!(cmd.ends_with("\""), "command should end with closing quote");
+    assert!(cmd.contains("sed -n \"s/.*PATH=\\\""));
+    assert!(cmd.ends_with("'"), "command should end with closing single quote");
     }
 
     #[test]

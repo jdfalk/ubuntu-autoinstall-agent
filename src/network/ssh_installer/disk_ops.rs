@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/disk_ops.rs
-// version: 1.1.0
+// version: 1.2.0
 // guid: sshdisk1-2345-6789-abcd-ef0123456789
 
 //! Disk operations for SSH installation
@@ -170,13 +170,10 @@ impl<'a> DiskManager<'a> {
         self.log_and_execute("Creating BPOOL partition",
             &format!("parted -s {} mkpart BPOOL 4609MiB 6657MiB", config.disk_device)).await?;
 
-        // LUKS partition (6657MiB to 7681MiB)
+        // LUKS partition (6657MiB to 100%)
+        // We use the LUKS-mapped device as the sole vdev for rpool; no separate RPOOL partition.
         self.log_and_execute("Creating LUKS partition",
-            &format!("parted -s {} mkpart LUKS 6657MiB 7681MiB", config.disk_device)).await?;
-
-        // RPOOL partition (7681MiB to 100%)
-        self.log_and_execute("Creating RPOOL partition",
-            &format!("parted -s {} mkpart RPOOL 7681MiB 100%", config.disk_device)).await?;
+            &format!("parted -s {} mkpart LUKS 6657MiB 100%", config.disk_device)).await?;
 
         Ok(())
     }
@@ -201,7 +198,7 @@ impl<'a> DiskManager<'a> {
             &format!("echo '{}' | cryptsetup luksFormat --batch-mode {}p4", config.luks_key, config.disk_device)).await?;
         self.log_and_execute("Opening LUKS device",
             &format!("echo '{}' | cryptsetup open {}p4 luks", config.luks_key, config.disk_device)).await?;
-        self.log_and_execute("Creating XFS on LUKS", "mkfs.xfs -f -b size=4096 /dev/mapper/luks").await?;
+        // Do not create a filesystem on the LUKS-mapped device; it will back the ZFS rpool.
 
         Ok(())
     }

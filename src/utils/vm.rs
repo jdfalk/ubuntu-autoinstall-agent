@@ -1,5 +1,5 @@
 // file: src/utils/vm.rs
-// version: 1.1.2
+// version: 1.1.3
 // guid: y5z6a7b8-c9d0-1234-5678-901234yzabcd
 
 //! VM management utilities
@@ -15,13 +15,15 @@ use tracing::{info, debug, warn};
 /// VM manager for creating and running virtual machines
 pub struct VmManager {
     // Using direct kernel boot approach, no UEFI required
+    pub qemu_binary: &'static str,
 }
 
 impl VmManager {
     /// Create a new VM manager
     pub fn new() -> Self {
         Self {
-            // Using direct kernel boot approach
+            // Default to AMD64 QEMU binary; methods may choose different binaries per architecture
+            qemu_binary: "qemu-system-x86_64",
         }
     }
 

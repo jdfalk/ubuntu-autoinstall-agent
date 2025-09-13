@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/installer.rs
-// version: 1.8.0
+// version: 1.8.1
 // guid: sshins01-2345-6789-abcd-ef0123456789
 
 //! Main SSH installer orchestrating all installation phases
@@ -333,8 +333,8 @@ impl SshInstaller {
         }
 
         // 5) LUKS and residual mounts check; recover if needed
-        let luks_active = self.ssh.check_silent("cryptsetup status luks >/dev/null 2>&1").await.unwrap_or(false);
-        let luks_mounted = self.ssh.check_silent("mountpoint -q /mnt/luks").await.unwrap_or(false);
+    let luks_active = self.ssh.check_silent("cryptsetup status luks >/dev/null 2>&1").await.unwrap_or(false);
+    let luks_mounted = false; // we do not mount the LUKS mapper as a filesystem
         let target_has_mounts = self.ssh.check_silent("mount | grep -q '/mnt/targetos' ").await.unwrap_or(false);
         let pools_exist = self.ssh.check_silent("zpool list -H bpool >/dev/null 2>&1").await.unwrap_or(false) ||
             self.ssh.check_silent("zpool list -H rpool >/dev/null 2>&1").await.unwrap_or(false);

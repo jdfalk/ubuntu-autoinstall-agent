@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/zfs_ops.rs
-// version: 1.2.0
+// version: 1.3.1
 // guid: sshzfs01-2345-6789-abcd-ef0123456789
 
 //! ZFS operations for SSH installation
@@ -24,8 +24,8 @@ impl<'a> ZfsManager<'a> {
     pub async fn create_zfs_pools(&mut self, config: &InstallationConfig) -> Result<()> {
         info!("Creating ZFS pools and datasets");
 
-        // Prepare ZFS key storage
-        self.prepare_zfs_key_storage(config).await?;
+    // Ensure target root exists; rpool datasets will mount here
+    self.log_and_execute("Creating target directory", "mkdir -p /mnt/targetos").await?;
 
         // Generate UUID for dataset naming
         let uuid = self.generate_installation_uuid().await?;
@@ -71,19 +71,7 @@ impl<'a> ZfsManager<'a> {
         Ok(())
     }
 
-    /// Prepare ZFS key storage in LUKS
-    async fn prepare_zfs_key_storage(&mut self, _config: &InstallationConfig) -> Result<()> {
-        info!("Preparing ZFS key storage");
-
-        self.log_and_execute("Creating /mnt/luks", "mkdir -p /mnt/luks").await?;
-        self.log_and_execute("Mounting LUKS", "mount /dev/mapper/luks /mnt/luks").await?;
-        self.log_and_execute("Generating ZFS key", "dd if=/dev/random of=/mnt/luks/zfs.key bs=32 count=1").await?;
-        self.log_and_execute("Setting ZFS key permissions", "chmod 600 /mnt/luks/zfs.key").await?;
-        // Don't unmount or close LUKS yet - we need it for rpool creation
-        self.log_and_execute("Creating target directory", "mkdir -p /mnt/targetos").await?;
-
-        Ok(())
-    }
+    // Removed: prepare_zfs_key_storage - no file-based key, using passphrase-opened LUKS for rpool block device
 
     /// Generate unique UUID for this installation
     async fn generate_installation_uuid(&mut self) -> Result<String> {
@@ -115,19 +103,15 @@ impl<'a> ZfsManager<'a> {
     }
 
     /// Create rpool (root pool) with encryption
-    async fn create_rpool(&mut self, config: &InstallationConfig) -> Result<()> {
+    async fn create_rpool(&mut self, _config: &InstallationConfig) -> Result<()> {
         info!("Creating rpool with encryption");
 
-        // LUKS device should already be open from prepare_zfs_key_storage
-        // Just ensure the mount point exists and is mounted
-        self.log_and_execute("Ensuring LUKS is mounted", "mount /dev/mapper/luks /mnt/luks 2>/dev/null || true").await?;
-
-        let rpool_cmd = format!(
+        // Create rpool on the LUKS-mapped block device; encryption is provided by LUKS, so ZFS native encryption is optional and disabled here
+        let rpool_cmd = String::from(
             "zpool create -o ashift=12 -o autotrim=on \
-             -O encryption=on -O keylocation=file:///mnt/luks/zfs.key -O keyformat=raw \
              -O acltype=posixacl -O xattr=sa -O dnodesize=auto -O compression=lz4 \
              -O normalization=formD -O relatime=on -O canmount=off -O mountpoint=none \
-             -m none -R /mnt/targetos rpool {}p5", config.disk_device
+             -m none -R /mnt/targetos rpool /dev/mapper/luks"
         );
         self.log_and_execute("Creating rpool", &rpool_cmd).await?;
 

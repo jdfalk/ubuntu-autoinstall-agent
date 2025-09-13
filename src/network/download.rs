@@ -1,5 +1,5 @@
 // file: src/network/download.rs
-// version: 1.0.0
+// version: 1.0.1
 // guid: u1v2w3x4-y5z6-7890-1234-567890uvwxyz
 
 //! Network download utilities
@@ -34,7 +34,7 @@ impl NetworkDownloader {
         info!("Downloading: {}", url);
 
         let response = self.client.get(url).send().await?;
-        
+
         if !response.status().is_success() {
             return Err(crate::error::AutoInstallError::NetworkError(
                 format!("Download failed with status: {}", response.status())
@@ -42,7 +42,7 @@ impl NetworkDownloader {
         }
 
         let total_size = response.content_length().unwrap_or(0);
-        
+
         let pb = ProgressBar::new(total_size);
         pb.set_style(
             ProgressStyle::default_bar()
@@ -74,7 +74,7 @@ impl NetworkDownloader {
         debug!("Downloading (no progress): {}", url);
 
         let response = self.client.get(url).send().await?;
-        
+
         if !response.status().is_success() {
             return Err(crate::error::AutoInstallError::NetworkError(
                 format!("Download failed with status: {}", response.status())
@@ -112,12 +112,11 @@ impl Default for NetworkDownloader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
 
     #[tokio::test]
     async fn test_verify_url() {
         let downloader = NetworkDownloader::new();
-        
+
         // Test with a reliable URL (this might fail in CI without internet)
         // In a real test environment, you'd use a mock server
         let result = downloader.verify_url("https://httpbin.org/status/200").await;
@@ -128,7 +127,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_file_size() {
         let downloader = NetworkDownloader::new();
-        
+
         // Test with a URL that should return content-length
         let result = downloader.get_file_size("https://httpbin.org/bytes/1024").await;
         assert!(result.is_ok());
