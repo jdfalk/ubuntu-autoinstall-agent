@@ -1,5 +1,5 @@
 // file: src/image/builder/iso.rs
-// version: 1.0.0
+// version: 1.0.1
 // guid: a1a2a3a4-b5b6-7890-1234-567890abcdef
 
 //! ISO management and download utilities
@@ -34,10 +34,10 @@ impl IsoManager {
             spec.ubuntu_version, spec.architecture.as_str()));
 
         fs::create_dir_all(&iso_dir).await
-            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+            .map_err(crate::error::AutoInstallError::IoError)?;
 
         fs::create_dir_all(&extract_dir).await
-            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+            .map_err(crate::error::AutoInstallError::IoError)?;
 
         // Check if kernel files already extracted
         let kernel_path = extract_dir.join("casper").join("vmlinuz");
@@ -94,7 +94,7 @@ impl IsoManager {
         // Mount the ISO and extract kernel/initrd files
         let mount_dir = extract_dir.join("mnt");
         fs::create_dir_all(&mount_dir).await
-            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+            .map_err(crate::error::AutoInstallError::IoError)?;
 
         // Create a temporary mount script since we need sudo
         let mount_script = extract_dir.join("mount_iso.sh");
@@ -124,21 +124,21 @@ echo "ISO boot files extracted successfully"
         );
 
         fs::write(&mount_script, mount_script_content).await
-            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+            .map_err(crate::error::AutoInstallError::IoError)?;
 
         // Make script executable
         Command::new("chmod")
-            .args(&["+x", mount_script.to_str().unwrap()])
+            .args(["+x", mount_script.to_str().unwrap()])
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+            .map_err(crate::error::AutoInstallError::IoError)?;
 
         // Execute mount script
         let output = Command::new("bash")
             .arg(mount_script.to_str().unwrap())
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+            .map_err(crate::error::AutoInstallError::IoError)?;
 
         if !output.status.success() {
             return Err(crate::error::AutoInstallError::ProcessError {
