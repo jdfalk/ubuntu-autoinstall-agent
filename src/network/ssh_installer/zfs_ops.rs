@@ -114,6 +114,9 @@ impl<'a> ZfsManager<'a> {
     async fn create_bpool_datasets(&mut self, uuid: &str) -> Result<()> {
         info!("Creating bpool datasets");
 
+        // Ensure mountpoint exists for /boot
+        self.log_and_execute("Ensure /boot mountpoint", "mkdir -p /mnt/targetos/boot").await?;
+
         self.log_and_execute("Creating bpool/BOOT", "zfs create -o canmount=off -o mountpoint=none bpool/BOOT").await?;
         self.log_and_execute("Creating bpool boot dataset",
             &format!("zfs create -o mountpoint=/boot bpool/BOOT/ubuntu_{}", uuid)).await?;
@@ -163,6 +166,8 @@ impl<'a> ZfsManager<'a> {
         }
 
         // Set special permissions
+        self.log_and_execute("Ensure /root exists", "mkdir -p /mnt/targetos/root").await?;
+        self.log_and_execute("Ensure /var/tmp exists", "mkdir -p /mnt/targetos/var/tmp").await?;
         self.log_and_execute("Setting /root permissions", "chmod 700 /mnt/targetos/root").await?;
         self.log_and_execute("Setting /var/tmp permissions", "chmod 1777 /mnt/targetos/var/tmp").await?;
 
