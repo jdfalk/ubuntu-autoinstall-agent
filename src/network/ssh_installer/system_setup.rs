@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/system_setup.rs
-// version: 1.13.1
+// version: 1.13.2
 // guid: sshsys01-2345-6789-abcd-ef0123456789
 
 //! System setup and configuration for SSH installation
@@ -280,6 +280,34 @@ impl<'a> SystemConfigurator<'a> {
     /// Configure GRUB in chroot
     pub async fn configure_grub_in_chroot(&mut self, config: &InstallationConfig) -> Result<()> {
         info!("Configuring GRUB in chroot");
+
+        // Re-ensure chroot runtime mounts are present (in case a prior phase changed mount state)
+        let _ = self.log_and_execute(
+            "Rebind /dev (rbind)",
+            "[ -d /mnt/targetos/dev ] || mkdir -p /mnt/targetos/dev; mountpoint -q /mnt/targetos/dev || mount --rbind /dev /mnt/targetos/dev"
+        ).await;
+        let _ = self.log_and_execute(
+            "Re-ensure /dev/pts",
+            "[ -d /mnt/targetos/dev/pts ] || mkdir -p /mnt/targetos/dev/pts; mountpoint -q /mnt/targetos/dev/pts || mount -t devpts devpts /mnt/targetos/dev/pts || true"
+        ).await;
+        let _ = self.log_and_execute(
+            "Rebind /proc (rbind)",
+            "[ -d /mnt/targetos/proc ] || mkdir -p /mnt/targetos/proc; mountpoint -q /mnt/targetos/proc || mount --rbind /proc /mnt/targetos/proc"
+        ).await;
+        let _ = self.log_and_execute(
+            "Rebind /sys (rbind)",
+            "[ -d /mnt/targetos/sys ] || mkdir -p /mnt/targetos/sys; mountpoint -q /mnt/targetos/sys || mount --rbind /sys /mnt/targetos/sys"
+        ).await;
+        let _ = self.log_and_execute(
+            "Rebind /run (rbind)",
+            "[ -d /mnt/targetos/run ] || mkdir -p /mnt/targetos/run; mountpoint -q /mnt/targetos/run || mount --rbind /run /mnt/targetos/run"
+        ).await;
+
+        // Quick diagnostics for udev visibility expected by grub-probe/grub-install
+        let _ = self.log_and_execute(
+            "Check udev presence",
+            "bash -lc '[ -d /mnt/targetos/run/udev ] && [ -d /mnt/targetos/dev/disk/by-id ] && echo udev-ok || echo udev-missing'"
+        ).await;
 
         // Ensure ESP is mounted inside the target (some environments unmount it between phases)
         let _ = self.log_and_execute(

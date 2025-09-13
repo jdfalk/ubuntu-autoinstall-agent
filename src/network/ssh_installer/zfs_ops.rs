@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/zfs_ops.rs
-// version: 1.3.1
+// version: 1.3.2
 // guid: sshzfs01-2345-6789-abcd-ef0123456789
 
 //! ZFS operations for SSH installation
@@ -107,15 +107,20 @@ impl<'a> ZfsManager<'a> {
         info!("Creating rpool with encryption");
 
         // Create rpool on the LUKS-mapped block device; encryption is provided by LUKS, so ZFS native encryption is optional and disabled here
-        let rpool_cmd = String::from(
+        let rpool_cmd = Self::build_rpool_create_command();
+        self.log_and_execute("Creating rpool", &rpool_cmd).await?;
+
+        Ok(())
+    }
+
+    /// Build the zpool create command for rpool using the LUKS mapper device
+    fn build_rpool_create_command() -> String {
+        String::from(
             "zpool create -o ashift=12 -o autotrim=on \
              -O acltype=posixacl -O xattr=sa -O dnodesize=auto -O compression=lz4 \
              -O normalization=formD -O relatime=on -O canmount=off -O mountpoint=none \
              -m none -R /mnt/targetos rpool /dev/mapper/luks"
-        );
-        self.log_and_execute("Creating rpool", &rpool_cmd).await?;
-
-        Ok(())
+        )
     }
 
     /// Create bpool datasets
@@ -224,5 +229,19 @@ impl<'a> ZfsManager<'a> {
                 Err(e)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_rpool_create_command_uses_luks_mapper() {
+        let cmd = ZfsManager::build_rpool_create_command();
+        assert!(cmd.contains("zpool create"));
+        assert!(cmd.contains(" rpool "));
+        assert!(cmd.contains("/dev/mapper/luks"));
+        assert!(cmd.contains("-R /mnt/targetos"));
     }
 }
