@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/system_setup.rs
-// version: 1.12.0
+// version: 1.13.0
 // guid: sshsys01-2345-6789-abcd-ef0123456789
 
 //! System setup and configuration for SSH installation
@@ -208,9 +208,9 @@ impl<'a> SystemConfigurator<'a> {
         let esp_uuid = esp_uuid_out.trim();
         if !esp_uuid.is_empty() {
             let fstab_line = format!("UUID={} /boot/efi vfat umask=0077 0 1", esp_uuid);
-            // Use single quotes around the echoed line to avoid escape complexity
+            // Single-quote the bash -lc argument; use double quotes inside for grep pattern and echo payload
             let cmd = format!(
-                r##"bash -lc "grep -q '^UUID=.* /boot/efi ' /mnt/targetos/etc/fstab 2>/dev/null || echo '{0}' >> /mnt/targetos/etc/fstab""##,
+                r#"bash -lc 'grep -q "^UUID=.* /boot/efi " /mnt/targetos/etc/fstab 2>/dev/null || echo "{0}" >> /mnt/targetos/etc/fstab'"#,
                 fstab_line
             );
             let _ = self.ssh.execute(&cmd).await;
@@ -387,7 +387,7 @@ mod tests {
         assert!(cmd.contains("lsblk -rP -o PATH,PARTTYPE"));
         assert!(cmd.contains("grep -i 'PARTTYPE=\""));
         assert!(cmd.contains(guid));
-        assert!(cmd.contains("sed -n 's/.*PATH=\\\""));
+        assert!(cmd.contains("sed -n 's/.*PATH=\""));
         assert!(cmd.ends_with("\""), "command should end with closing quote");
     }
 
