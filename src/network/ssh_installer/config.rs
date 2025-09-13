@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/config.rs
-// version: 1.0.0
+// version: 1.1.0
 // guid: sshcfg01-2345-6789-abcd-ef0123456789
 
 //! Configuration structures for SSH installation
@@ -16,6 +16,8 @@ pub struct InstallationConfig {
     pub network_gateway: String,
     pub network_search: String,
     pub network_nameservers: Vec<String>,
+    pub debootstrap_release: Option<String>,
+    pub debootstrap_mirror: Option<String>,
 }
 
 impl InstallationConfig {
@@ -32,6 +34,8 @@ impl InstallationConfig {
             network_gateway: "172.16.2.1".to_string(),
             network_search: "local.jdfalk.com".to_string(),
             network_nameservers: vec!["172.16.2.1".to_string(), "8.8.8.8".to_string()],
+            debootstrap_release: Some("oracular".to_string()),
+            debootstrap_mirror: Some("http://archive.ubuntu.com/ubuntu/".to_string()),
         }
     }
 }

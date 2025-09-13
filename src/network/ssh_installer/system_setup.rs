@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/system_setup.rs
-// version: 1.0.0
+// version: 1.1.0
 // guid: sshsys01-2345-6789-abcd-ef0123456789
 
 //! System setup and configuration for SSH installation
@@ -26,9 +26,21 @@ impl<'a> SystemConfigurator<'a> {
         self.log_and_execute("Creating ESP mount point", "mkdir -p /mnt/targetos/boot/efi").await?;
         self.log_and_execute("Mounting ESP", &format!("mount {}p1 /mnt/targetos/boot/efi", config.disk_device)).await?;
 
-        // Install base system using debootstrap
-        self.log_and_execute("Running debootstrap",
-            "debootstrap oracular /mnt/targetos http://archive.ubuntu.com/ubuntu/").await?;
+        // Install base system using debootstrap (codename/mirror configurable)
+        let release = config.debootstrap_release.as_deref().unwrap_or("oracular");
+        let mirror = config.debootstrap_mirror.as_deref().unwrap_or("http://old-releases.ubuntu.com/ubuntu/");
+        let primary_cmd = format!("debootstrap {} /mnt/targetos {}", release, mirror);
+        if let Err(_e) = self.log_and_execute("Running debootstrap", &primary_cmd).await {
+            // Fallback to old-releases if not already using it
+            let fallback_mirror = "http://old-releases.ubuntu.com/ubuntu/";
+            if mirror != fallback_mirror {
+                let fallback_cmd = format!("debootstrap {} /mnt/targetos {}", release, fallback_mirror);
+                self.log_and_execute("Running debootstrap (fallback old-releases)", &fallback_cmd).await?;
+            } else {
+                // Re-raise the original error
+                return Err(_e);
+            }
+        }
 
         // Setup basic system files
         self.setup_basic_system_files(config).await?;
@@ -126,8 +138,8 @@ impl<'a> SystemConfigurator<'a> {
         self.log_and_execute("Setting root password",
             &format!("chroot /mnt/targetos bash -c \"echo 'root:{}' | chpasswd\"", config.root_password)).await?;
 
-        // Enable SSH
-        self.log_and_execute("Enabling SSH", "chroot /mnt/targetos systemctl enable ssh").await?;
+    // Enable SSH (ignore failure if systemd not fully present yet)
+    let _ = self.log_and_execute("Enabling SSH", "chroot /mnt/targetos systemctl enable ssh").await;
 
         Ok(())
     }
@@ -145,7 +157,8 @@ impl<'a> SystemConfigurator<'a> {
         ];
 
         for cmd in zfs_commands {
-            self.log_and_execute(&format!("ZFS: {}", cmd), &format!("chroot /mnt/targetos {}", cmd)).await?;
+            // Best-effort: some services may not exist until packages are installed
+            let _ = self.log_and_execute(&format!("ZFS: {}", cmd), &format!("chroot /mnt/targetos {}", cmd)).await;
         }
 
         Ok(())
@@ -185,16 +198,17 @@ impl<'a> SystemConfigurator<'a> {
         info!("Performing final cleanup");
 
         // Unmount chroot bindings
-        self.log_and_execute("Unmounting /sys", "umount /mnt/targetos/sys").await?;
-        self.log_and_execute("Unmounting /proc", "umount /mnt/targetos/proc").await?;
-        self.log_and_execute("Unmounting /dev", "umount /mnt/targetos/dev").await?;
+    // Make unmounts idempotent
+    self.log_and_execute("Unmounting /sys", "umount /mnt/targetos/sys || true").await?;
+    self.log_and_execute("Unmounting /proc", "umount /mnt/targetos/proc || true").await?;
+    self.log_and_execute("Unmounting /dev", "umount /mnt/targetos/dev || true").await?;
 
         // Unmount filesystems
-        self.log_and_execute("Unmounting ESP", "umount /mnt/targetos/boot/efi").await?;
+    self.log_and_execute("Unmounting ESP", "umount /mnt/targetos/boot/efi || true").await?;
 
         // Export ZFS pools
-        self.log_and_execute("Exporting bpool", "zpool export bpool").await?;
-        self.log_and_execute("Exporting rpool", "zpool export rpool").await?;
+    self.log_and_execute("Exporting bpool", "zpool export bpool || true").await?;
+    self.log_and_execute("Exporting rpool", "zpool export rpool || true").await?;
 
         info!("Final cleanup completed");
         Ok(())

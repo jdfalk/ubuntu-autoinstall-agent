@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/zfs_ops.rs
-// version: 1.0.0
+// version: 1.1.0
 // guid: sshzfs01-2345-6789-abcd-ef0123456789
 
 //! ZFS operations for SSH installation
@@ -82,8 +82,8 @@ impl<'a> ZfsManager<'a> {
             "zpool create -o ashift=12 -o autotrim=on -o cachefile=/etc/zfs/zpool.cache \
              -o compatibility=grub2 -o feature@livelist=enabled -o feature@zpool_checkpoint=enabled \
              -O devices=off -O acltype=posixacl -O xattr=sa -O compression=lz4 \
-             -O normalization=formD -O relatime=on -O canmount=off -O mountpoint=/boot \
-             -R /mnt/targetos bpool {}p3", config.disk_device
+             -O normalization=formD -O relatime=on -O canmount=off -O mountpoint=none \
+             -m none -R /mnt/targetos bpool {}p3", config.disk_device
         );
         self.log_and_execute("Creating bpool", &bpool_cmd).await?;
 
@@ -102,8 +102,8 @@ impl<'a> ZfsManager<'a> {
             "zpool create -o ashift=12 -o autotrim=on \
              -O encryption=on -O keylocation=file:///mnt/luks/zfs.key -O keyformat=raw \
              -O acltype=posixacl -O xattr=sa -O dnodesize=auto -O compression=lz4 \
-             -O normalization=formD -O relatime=on -O canmount=off -O mountpoint=/ \
-             -R /mnt/targetos rpool {}p5", config.disk_device
+             -O normalization=formD -O relatime=on -O canmount=off -O mountpoint=none \
+             -m none -R /mnt/targetos rpool {}p5", config.disk_device
         );
         self.log_and_execute("Creating rpool", &rpool_cmd).await?;
 
