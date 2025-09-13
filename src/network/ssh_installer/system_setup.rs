@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/system_setup.rs
-// version: 1.10.0
+// version: 1.10.1
 // guid: sshsys01-2345-6789-abcd-ef0123456789
 
 //! System setup and configuration for SSH installation
@@ -22,8 +22,9 @@ impl<'a> SystemConfigurator<'a> {
     async fn detect_esp_partition_path(&mut self, default_disk: &str) -> Result<String> {
         // EFI System Partition type GUID
         let guid = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b";
+        // Use awk with a variable to avoid nested-quote complexities and ensure case-insensitive match
         let cmd = format!(
-            "bash -lc \"lsblk -rno PATH,PARTTYPE | awk 'BEGIN{{IGNORECASE=1}} $2==\"{}\"{{print $1; exit}}'\"",
+            "bash -lc \"lsblk -rno PATH,PARTTYPE | awk -v g='{}' 'BEGIN{{IGNORECASE=1}} $2==g{{print $1; exit}}'\"",
             guid
         );
         let out = self.ssh.execute_with_output(&cmd).await.unwrap_or_default();
