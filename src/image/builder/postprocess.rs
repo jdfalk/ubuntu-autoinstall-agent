@@ -1,5 +1,5 @@
 // file: src/image/builder/postprocess.rs
-// version: 1.0.0
+// version: 1.0.1
 // guid: d1d2d3d4-e5e6-7890-1234-567890defghi
 
 //! Image post-processing: generalization and finalization
@@ -94,7 +94,7 @@ umount-all
             // Create images directory in cache
             let images_dir = self.cache_dir.join("images");
             fs::create_dir_all(&images_dir).await
-                .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+                .map_err(crate::error::AutoInstallError::IoError)?;
 
             images_dir.join(format!("ubuntu-{}-{}-{}.qcow2",
                                   spec.ubuntu_version,
@@ -105,12 +105,12 @@ umount-all
         // Ensure output directory exists
         if let Some(parent) = final_path.parent() {
             fs::create_dir_all(parent).await
-                .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+                .map_err(crate::error::AutoInstallError::IoError)?;
         }
 
         // Compress the image
         let output = Command::new("qemu-img")
-            .args(&[
+            .args([
                 "convert",
                 "-c",  // Compress
                 "-O", "qcow2",
@@ -135,7 +135,7 @@ umount-all
 
         // Get image size
         let metadata = fs::metadata(&final_path).await
-            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+            .map_err(crate::error::AutoInstallError::IoError)?;
         let size_bytes = metadata.len();
 
         // Register the image if it was created successfully
@@ -163,14 +163,14 @@ umount-all
         use tokio::io::AsyncReadExt;
 
         let mut file = tokio::fs::File::open(image_path).await
-            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+            .map_err(crate::error::AutoInstallError::IoError)?;
 
         let mut hasher = Sha256::new();
         let mut buffer = [0u8; 8192];
 
         loop {
             let bytes_read = file.read(&mut buffer).await
-                .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+                .map_err(crate::error::AutoInstallError::IoError)?;
 
             if bytes_read == 0 {
                 break;
