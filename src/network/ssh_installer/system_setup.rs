@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/system_setup.rs
-// version: 1.10.1
+// version: 1.11.0
 // guid: sshsys01-2345-6789-abcd-ef0123456789
 
 //! System setup and configuration for SSH installation
@@ -18,22 +18,32 @@ impl<'a> SystemConfigurator<'a> {
         Self { ssh }
     }
 
+    /// Build the command used to detect the ESP partition by GUID
+    fn build_esp_detection_command(guid: &str) -> String {
+        // Use awk with a variable to avoid nested-quote complexities and ensure case-insensitive match
+        format!(
+            "bash -lc \"lsblk -rno PATH,PARTTYPE | awk -v g='{}' 'BEGIN{{IGNORECASE=1}} $2==g{{print $1; exit}}'\"",
+            guid
+        )
+    }
+
+    /// Decide which ESP partition path to use based on detection output
+    fn choose_esp_partition(detected_output: &str, default_disk: &str) -> String {
+        let part = detected_output.trim();
+        if part.is_empty() {
+            format!("{}p1", default_disk)
+        } else {
+            part.to_string()
+        }
+    }
+
     /// Detect the ESP partition path by GUID PARTTYPE; fallback to `${DISK}p1` if not found
     async fn detect_esp_partition_path(&mut self, default_disk: &str) -> Result<String> {
         // EFI System Partition type GUID
         let guid = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b";
-        // Use awk with a variable to avoid nested-quote complexities and ensure case-insensitive match
-        let cmd = format!(
-            "bash -lc \"lsblk -rno PATH,PARTTYPE | awk -v g='{}' 'BEGIN{{IGNORECASE=1}} $2==g{{print $1; exit}}'\"",
-            guid
-        );
+        let cmd = Self::build_esp_detection_command(guid);
         let out = self.ssh.execute_with_output(&cmd).await.unwrap_or_default();
-        let part = out.trim();
-        if part.is_empty() {
-            Ok(format!("{}p1", default_disk))
-        } else {
-            Ok(part.to_string())
-        }
+        Ok(Self::choose_esp_partition(&out, default_disk))
     }
 
     /// Install base system using debootstrap
@@ -362,5 +372,38 @@ impl<'a> SystemConfigurator<'a> {
     async fn log_and_execute(&mut self, description: &str, command: &str) -> Result<()> {
         info!("Executing: {} -> {}", description, command);
         self.ssh.execute(command).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_esp_detection_command_contains_expected_parts() {
+        let guid = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b";
+        let cmd = SystemConfigurator::build_esp_detection_command(guid);
+        // Basic sanity of structure
+        assert!(cmd.starts_with("bash -lc \""), "command should start with bash -lc");
+        assert!(cmd.contains("lsblk -rno PATH,PARTTYPE"));
+        assert!(cmd.contains("awk -v g='"));
+        assert!(cmd.contains(guid));
+        assert!(cmd.contains("BEGIN{IGNORECASE=1}"));
+        assert!(cmd.contains("$2==g{print $1; exit}"));
+        assert!(cmd.ends_with("\""), "command should end with closing quote");
+    }
+
+    #[test]
+    fn test_choose_esp_partition_uses_detected_when_present() {
+        let detected = "/dev/nvme0n1p1\n"; // with trailing newline
+        let chosen = SystemConfigurator::choose_esp_partition(detected, "/dev/nvme0n1");
+        assert_eq!(chosen, "/dev/nvme0n1p1");
+    }
+
+    #[test]
+    fn test_choose_esp_partition_falls_back_when_empty() {
+        let detected = "  \n\t"; // whitespace only
+        let chosen = SystemConfigurator::choose_esp_partition(detected, "/dev/sda");
+        assert_eq!(chosen, "/dev/sdap1");
     }
 }
