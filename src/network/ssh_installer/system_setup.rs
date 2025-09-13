@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/system_setup.rs
-// version: 1.7.0
+// version: 1.7.1
 // guid: sshsys01-2345-6789-abcd-ef0123456789
 
 //! System setup and configuration for SSH installation
@@ -146,6 +146,22 @@ impl<'a> SystemConfigurator<'a> {
         let _ = self.log_and_execute(
             "Reset chroot resolv.conf",
             "[ -e /mnt/targetos/etc/resolv.conf ] && rm -f /mnt/targetos/etc/resolv.conf; echo 'nameserver 1.1.1.1' > /mnt/targetos/etc/resolv.conf"
+        ).await;
+
+        // Ensure ESP is mounted before installing EFI-related packages so postinst scripts can run correctly
+        let _ = self.log_and_execute(
+            "Ensure ESP mountpoint",
+            "[ -d /mnt/targetos/boot/efi ] || mkdir -p /mnt/targetos/boot/efi"
+        ).await;
+        let _ = self.log_and_execute(
+            "Mount ESP if not mounted",
+            &format!("mountpoint -q /mnt/targetos/boot/efi || mount {}p1 /mnt/targetos/boot/efi || true", config.disk_device)
+        ).await;
+
+        // Ensure efivarfs is available in chroot prior to EFI package installation (some postinst may touch NVRAM)
+        let _ = self.log_and_execute(
+            "Ensure efivarfs in chroot",
+            "chroot /mnt/targetos bash -lc '[ -d /sys/firmware/efi/efivars ] || mkdir -p /sys/firmware/efi/efivars; mountpoint -q /sys/firmware/efi/efivars || mount -t efivarfs efivarfs /sys/firmware/efi/efivars || true'"
         ).await;
 
         // Install essential packages
