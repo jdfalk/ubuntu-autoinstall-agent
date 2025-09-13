@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/installer.rs
-// version: 1.6.0
+// version: 1.7.0
 // guid: sshins01-2345-6789-abcd-ef0123456789
 
 //! Main SSH installer orchestrating all installation phases

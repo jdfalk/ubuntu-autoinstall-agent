@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/system_setup.rs
-// version: 1.7.1
+// version: 1.10.0
 // guid: sshsys01-2345-6789-abcd-ef0123456789
 
 //! System setup and configuration for SSH installation
@@ -18,13 +18,31 @@ impl<'a> SystemConfigurator<'a> {
         Self { ssh }
     }
 
+    /// Detect the ESP partition path by GUID PARTTYPE; fallback to `${DISK}p1` if not found
+    async fn detect_esp_partition_path(&mut self, default_disk: &str) -> Result<String> {
+        // EFI System Partition type GUID
+        let guid = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b";
+        let cmd = format!(
+            "bash -lc \"lsblk -rno PATH,PARTTYPE | awk 'BEGIN{{IGNORECASE=1}} $2==\"{}\"{{print $1; exit}}'\"",
+            guid
+        );
+        let out = self.ssh.execute_with_output(&cmd).await.unwrap_or_default();
+        let part = out.trim();
+        if part.is_empty() {
+            Ok(format!("{}p1", default_disk))
+        } else {
+            Ok(part.to_string())
+        }
+    }
+
     /// Install base system using debootstrap
     pub async fn install_base_system(&mut self, config: &InstallationConfig) -> Result<()> {
         info!("Installing base system");
 
-        // Mount ESP partition
-        self.log_and_execute("Creating ESP mount point", "mkdir -p /mnt/targetos/boot/efi").await?;
-        self.log_and_execute("Mounting ESP", &format!("mount {}p1 /mnt/targetos/boot/efi", config.disk_device)).await?;
+    // Mount ESP partition (auto-detect by PARTTYPE GUID, fallback to ${DISK}p1)
+    self.log_and_execute("Creating ESP mount point", "mkdir -p /mnt/targetos/boot/efi").await?;
+    let esp_part = self.detect_esp_partition_path(&config.disk_device).await?;
+    self.log_and_execute("Mounting ESP", &format!("mount {} /mnt/targetos/boot/efi", esp_part)).await?;
 
         // Install base system using debootstrap (codename/mirror configurable)
         let release = config.debootstrap_release.as_deref().unwrap_or("plucky");
@@ -120,8 +138,12 @@ impl<'a> SystemConfigurator<'a> {
         // Prepare chroot (align with OpenZFS Ubuntu root-on-ZFS guidance)
         // Use rbind + make-rslave so nested mounts propagate correctly
         let _ = self.log_and_execute(
-            "Binding /dev (rbind)",
-            "[ -d /mnt/targetos/dev ] || mkdir -p /mnt/targetos/dev; mountpoint -q /mnt/targetos/dev || mount --rbind /dev /mnt/targetos/dev; mount --make-rslave /mnt/targetos/dev"
+            "Bind /dev (rbind)",
+            "[ -d /mnt/targetos/dev ] || mkdir -p /mnt/targetos/dev; mountpoint -q /mnt/targetos/dev || mount --rbind /dev /mnt/targetos/dev"
+        ).await;
+        let _ = self.log_and_execute(
+            "Make /dev private",
+            "mount --make-private /mnt/targetos/dev || true"
         ).await;
         // Ensure devpts exists (rbind should cover it, but this is a safe fallback)
         let _ = self.log_and_execute(
@@ -129,16 +151,28 @@ impl<'a> SystemConfigurator<'a> {
             "[ -d /mnt/targetos/dev/pts ] || mkdir -p /mnt/targetos/dev/pts; mountpoint -q /mnt/targetos/dev/pts || mount -t devpts devpts /mnt/targetos/dev/pts || true"
         ).await;
         let _ = self.log_and_execute(
-            "Binding /proc (rbind)",
-            "[ -d /mnt/targetos/proc ] || mkdir -p /mnt/targetos/proc; mountpoint -q /mnt/targetos/proc || mount --rbind /proc /mnt/targetos/proc; mount --make-rslave /mnt/targetos/proc"
+            "Bind /proc (rbind)",
+            "[ -d /mnt/targetos/proc ] || mkdir -p /mnt/targetos/proc; mountpoint -q /mnt/targetos/proc || mount --rbind /proc /mnt/targetos/proc"
         ).await;
         let _ = self.log_and_execute(
-            "Binding /sys (rbind)",
-            "[ -d /mnt/targetos/sys ] || mkdir -p /mnt/targetos/sys; mountpoint -q /mnt/targetos/sys || mount --rbind /sys /mnt/targetos/sys; mount --make-rslave /mnt/targetos/sys"
+            "Make /proc private",
+            "mount --make-private /mnt/targetos/proc || true"
         ).await;
         let _ = self.log_and_execute(
-            "Binding /run (rbind)",
-            "[ -d /mnt/targetos/run ] || mkdir -p /mnt/targetos/run; mountpoint -q /mnt/targetos/run || mount --rbind /run /mnt/targetos/run; mount --make-rslave /mnt/targetos/run"
+            "Bind /sys (rbind)",
+            "[ -d /mnt/targetos/sys ] || mkdir -p /mnt/targetos/sys; mountpoint -q /mnt/targetos/sys || mount --rbind /sys /mnt/targetos/sys"
+        ).await;
+        let _ = self.log_and_execute(
+            "Make /sys private",
+            "mount --make-private /mnt/targetos/sys || true"
+        ).await;
+        let _ = self.log_and_execute(
+            "Bind /run (rbind)",
+            "[ -d /mnt/targetos/run ] || mkdir -p /mnt/targetos/run; mountpoint -q /mnt/targetos/run || mount --rbind /run /mnt/targetos/run"
+        ).await;
+        let _ = self.log_and_execute(
+            "Make /run private",
+            "mount --make-private /mnt/targetos/run || true"
         ).await;
 
         // Fix DNS inside chroot: resolv.conf is often a broken symlink in a chroot
@@ -153,10 +187,24 @@ impl<'a> SystemConfigurator<'a> {
             "Ensure ESP mountpoint",
             "[ -d /mnt/targetos/boot/efi ] || mkdir -p /mnt/targetos/boot/efi"
         ).await;
+        let esp_part = self.detect_esp_partition_path(&config.disk_device).await?;
         let _ = self.log_and_execute(
             "Mount ESP if not mounted",
-            &format!("mountpoint -q /mnt/targetos/boot/efi || mount {}p1 /mnt/targetos/boot/efi || true", config.disk_device)
+            &format!("mountpoint -q /mnt/targetos/boot/efi || mount {} /mnt/targetos/boot/efi || true", esp_part)
         ).await;
+
+        // Ensure /etc/fstab has a persistent entry for the ESP (UUID based)
+        let esp_part = self.detect_esp_partition_path(&config.disk_device).await?;
+        let esp_uuid_out = self.ssh.execute_with_output(&format!("blkid -s UUID -o value {} 2>/dev/null || true", esp_part)).await?;
+        let esp_uuid = esp_uuid_out.trim();
+        if !esp_uuid.is_empty() {
+            let fstab_line = format!("UUID={} /boot/efi vfat umask=0077 0 1", esp_uuid);
+            let cmd = format!(
+                "bash -lc \"grep -q '^UUID=.* /boot/efi ' /mnt/targetos/etc/fstab 2>/dev/null || echo \\\"{}\\\" >> /mnt/targetos/etc/fstab\"",
+                fstab_line.replace('"', "\\\"")
+            );
+            let _ = self.ssh.execute(&cmd).await;
+        }
 
         // Ensure efivarfs is available in chroot prior to EFI package installation (some postinst may touch NVRAM)
         let _ = self.log_and_execute(
@@ -168,7 +216,7 @@ impl<'a> SystemConfigurator<'a> {
         let chroot_commands = vec![
             "apt update",
             // Core UEFI + ZFS packages
-            "DEBIAN_FRONTEND=noninteractive apt install -y grub-efi-amd64 grub-efi-amd64-signed linux-image-generic shim-signed zfs-initramfs zfsutils-linux zsys efibootmgr",
+            "DEBIAN_FRONTEND=noninteractive apt install -y grub-efi-amd64 grub-efi-amd64-signed linux-image-generic shim-signed zfs-initramfs zfsutils-linux zsys efibootmgr cryptsetup cryptsetup-initramfs",
             // Helpful tooling
             "DEBIAN_FRONTEND=noninteractive apt install -y linux-headers-generic",
             "DEBIAN_FRONTEND=noninteractive apt install -y openssh-server vim htop curl",
@@ -177,6 +225,12 @@ impl<'a> SystemConfigurator<'a> {
         for cmd in chroot_commands {
             let _ = self.log_and_execute(&format!("Chroot: {}", cmd), &format!("chroot /mnt/targetos bash -lc '{}'", cmd)).await;
         }
+
+        // Generate /etc/hostid to aid ZFS import on boot (prefer zgenhostid, fallback to hostid)
+        let _ = self.log_and_execute(
+            "Generate /etc/hostid",
+            "chroot /mnt/targetos bash -lc 'command -v zgenhostid >/dev/null 2>&1 && zgenhostid -f /etc/hostid || (command -v hostid >/dev/null 2>&1 && hostid > /etc/hostid) || true'"
+        ).await;
 
         // Set root password
         let _ = self.log_and_execute(
@@ -219,9 +273,10 @@ impl<'a> SystemConfigurator<'a> {
             "Ensure ESP mountpoint",
             "[ -d /mnt/targetos/boot/efi ] || mkdir -p /mnt/targetos/boot/efi"
         ).await;
+        let esp_part = self.detect_esp_partition_path(&config.disk_device).await?;
         let _ = self.log_and_execute(
             "Mount ESP if not mounted",
-            &format!("mountpoint -q /mnt/targetos/boot/efi || mount {}p1 /mnt/targetos/boot/efi || true", config.disk_device)
+            &format!("mountpoint -q /mnt/targetos/boot/efi || mount {} /mnt/targetos/boot/efi || true", esp_part)
         ).await;
 
         // Ensure efivarfs is mounted inside chroot (some environments need this for NVRAM writes)
@@ -262,9 +317,16 @@ impl<'a> SystemConfigurator<'a> {
             &format!("echo '{}' > /mnt/targetos/etc/luks.key", config.luks_key)).await?;
         self.log_and_execute("Setting keyfile permissions", "chmod 600 /mnt/targetos/etc/luks.key").await?;
 
-        // Update crypttab
-    let crypttab_entry = format!("luks {}p4 /etc/luks.key luks", config.disk_device);
-    let _ = self.ssh.execute(&format!("[ -d /mnt/targetos/etc ] || mkdir -p /mnt/targetos/etc; echo '{}' > /mnt/targetos/etc/crypttab", crypttab_entry)).await;
+        // Discover partition UUID and write crypttab using UUID with recommended options
+        let part = format!("{}p4", config.disk_device);
+        let uuid_out = self.ssh.execute_with_output(&format!("blkid -s UUID -o value {} 2>/dev/null || true", part)).await?;
+        let uuid = uuid_out.trim();
+        let crypt_device = if uuid.is_empty() { part.clone() } else { format!("UUID={}", uuid) };
+        let crypttab_entry = format!("luks {} /etc/luks.key luks,discard", crypt_device);
+        let _ = self.ssh.execute(&format!("[ -d /mnt/targetos/etc ] || mkdir -p /mnt/targetos/etc; echo '{}' > /mnt/targetos/etc/crypttab", crypttab_entry)).await;
+
+        // Update initramfs to include cryptroot and keyfile (post-crypttab)
+        let _ = self.log_and_execute("Updating initramfs (post-crypttab)", "chroot /mnt/targetos bash -lc 'update-initramfs -u -k all'").await;
 
         Ok(())
     }
