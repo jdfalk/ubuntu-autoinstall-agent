@@ -1,5 +1,5 @@
 // file: src/network/ssh.rs
-// version: 1.2.0
+// version: 1.3.0
 // guid: t0u1v2w3-x4y5-6789-0123-456789tuvwxy
 
 //! SSH client for remote deployment operations
@@ -184,6 +184,28 @@ impl SshClient {
         }
 
         Ok((exit_status, stdout, stderr))
+    }
+
+    /// Execute a command intended as a boolean check without emitting error logs.
+    /// Returns Ok(true) if the command exits with 0, Ok(false) if non-zero, Err on transport issues.
+    pub async fn check_silent(&mut self, command: &str) -> Result<bool> {
+        let session = self.session.as_mut()
+            .ok_or_else(|| crate::error::AutoInstallError::SshError("No active SSH session".to_string()))?;
+
+        let mut channel = session.channel_session()
+            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to create SSH channel: {}", e)))?;
+
+        channel.exec(command)
+            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to execute command: {}", e)))?;
+
+        // We don't care about output here; just wait for status
+        channel.wait_close()
+            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to close SSH channel: {}", e)))?;
+
+        let exit_status = channel.exit_status()
+            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to get exit status: {}", e)))?;
+
+        Ok(exit_status == 0)
     }
 
     /// Collect system information for debugging

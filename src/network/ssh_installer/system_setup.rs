@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/system_setup.rs
-// version: 1.11.0
+// version: 1.12.0
 // guid: sshsys01-2345-6789-abcd-ef0123456789
 
 //! System setup and configuration for SSH installation
@@ -20,11 +20,9 @@ impl<'a> SystemConfigurator<'a> {
 
     /// Build the command used to detect the ESP partition by GUID
     fn build_esp_detection_command(guid: &str) -> String {
-        // Use awk with a variable to avoid nested-quote complexities and ensure case-insensitive match
-        format!(
-            "bash -lc \"lsblk -rno PATH,PARTTYPE | awk -v g='{}' 'BEGIN{{IGNORECASE=1}} $2==g{{print $1; exit}}'\"",
-            guid
-        )
+        // Use lsblk key=value format (-P) and grep/sed to extract PATH for the matching PARTTYPE.
+        // Safe quoting: outer bash uses double quotes; sed uses single quotes containing double quotes.
+    format!(r##"bash -lc "lsblk -rP -o PATH,PARTTYPE | grep -i 'PARTTYPE="{0}"' | head -n1 | sed -n 's/.*PATH="\([^" ]*\)".*/\1/p'""##, guid)
     }
 
     /// Decide which ESP partition path to use based on detection output
@@ -210,9 +208,10 @@ impl<'a> SystemConfigurator<'a> {
         let esp_uuid = esp_uuid_out.trim();
         if !esp_uuid.is_empty() {
             let fstab_line = format!("UUID={} /boot/efi vfat umask=0077 0 1", esp_uuid);
+            // Use single quotes around the echoed line to avoid escape complexity
             let cmd = format!(
-                "bash -lc \"grep -q '^UUID=.* /boot/efi ' /mnt/targetos/etc/fstab 2>/dev/null || echo \\\"{}\\\" >> /mnt/targetos/etc/fstab\"",
-                fstab_line.replace('"', "\\\"")
+                r##"bash -lc "grep -q '^UUID=.* /boot/efi ' /mnt/targetos/etc/fstab 2>/dev/null || echo '{0}' >> /mnt/targetos/etc/fstab""##,
+                fstab_line
             );
             let _ = self.ssh.execute(&cmd).await;
         }
@@ -385,11 +384,10 @@ mod tests {
         let cmd = SystemConfigurator::build_esp_detection_command(guid);
         // Basic sanity of structure
         assert!(cmd.starts_with("bash -lc \""), "command should start with bash -lc");
-        assert!(cmd.contains("lsblk -rno PATH,PARTTYPE"));
-        assert!(cmd.contains("awk -v g='"));
+        assert!(cmd.contains("lsblk -rP -o PATH,PARTTYPE"));
+        assert!(cmd.contains("grep -i 'PARTTYPE=\""));
         assert!(cmd.contains(guid));
-        assert!(cmd.contains("BEGIN{IGNORECASE=1}"));
-        assert!(cmd.contains("$2==g{print $1; exit}"));
+        assert!(cmd.contains("sed -n 's/.*PATH=\\\""));
         assert!(cmd.ends_with("\""), "command should end with closing quote");
     }
 

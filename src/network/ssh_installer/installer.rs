@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/installer.rs
-// version: 1.7.0
+// version: 1.8.0
 // guid: sshins01-2345-6789-abcd-ef0123456789
 
 //! Main SSH installer orchestrating all installation phases
@@ -326,18 +326,18 @@ impl SshInstaller {
         }
 
         // 4) Detect existing pools to avoid duplicate creation
-        let has_bpool = self.ssh.execute("zpool list -H bpool >/dev/null 2>&1").await.is_ok();
-        let has_rpool = self.ssh.execute("zpool list -H rpool >/dev/null 2>&1").await.is_ok();
+    let has_bpool = self.ssh.check_silent("zpool list -H bpool >/dev/null 2>&1").await.unwrap_or(false);
+    let has_rpool = self.ssh.check_silent("zpool list -H rpool >/dev/null 2>&1").await.unwrap_or(false);
         if has_bpool || has_rpool {
             info!("Preflight: existing pools detected: bpool={} rpool={}", has_bpool, has_rpool);
         }
 
         // 5) LUKS and residual mounts check; recover if needed
-        let luks_active = self.ssh.execute("cryptsetup status luks >/dev/null 2>&1").await.is_ok();
-        let luks_mounted = self.ssh.execute("mountpoint -q /mnt/luks").await.is_ok();
-        let target_has_mounts = self.ssh.execute("mount | grep -q '/mnt/targetos' ").await.is_ok();
-        let pools_exist = self.ssh.execute("zpool list -H bpool >/dev/null 2>&1").await.is_ok() ||
-            self.ssh.execute("zpool list -H rpool >/dev/null 2>&1").await.is_ok();
+        let luks_active = self.ssh.check_silent("cryptsetup status luks >/dev/null 2>&1").await.unwrap_or(false);
+        let luks_mounted = self.ssh.check_silent("mountpoint -q /mnt/luks").await.unwrap_or(false);
+        let target_has_mounts = self.ssh.check_silent("mount | grep -q '/mnt/targetos' ").await.unwrap_or(false);
+        let pools_exist = self.ssh.check_silent("zpool list -H bpool >/dev/null 2>&1").await.unwrap_or(false) ||
+            self.ssh.check_silent("zpool list -H rpool >/dev/null 2>&1").await.unwrap_or(false);
 
         if luks_active || luks_mounted || target_has_mounts || pools_exist {
             info!("Preflight: residual state detected (luks_active={}, luks_mounted={}, target_mounts={}, pools_exist={}); attempting recovery/reset",

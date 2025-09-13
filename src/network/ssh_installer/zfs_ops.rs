@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/zfs_ops.rs
-// version: 1.1.0
+// version: 1.2.0
 // guid: sshzfs01-2345-6789-abcd-ef0123456789
 
 //! ZFS operations for SSH installation
@@ -32,28 +32,28 @@ impl<'a> ZfsManager<'a> {
         self.variables.insert("UUID".to_string(), uuid.clone());
 
         // Create bpool if not present
-        if self.ssh.execute("zpool list -H bpool >/dev/null 2>&1").await.is_err() {
+    if !self.ssh.check_silent("zpool list -H bpool >/dev/null 2>&1").await.unwrap_or(false) {
             self.create_bpool(config).await?;
         } else {
             info!("bpool already exists; skipping pool creation");
         }
 
         // Create rpool with encryption if not present
-        if self.ssh.execute("zpool list -H rpool >/dev/null 2>&1").await.is_err() {
+    if !self.ssh.check_silent("zpool list -H rpool >/dev/null 2>&1").await.unwrap_or(false) {
             self.create_rpool(config).await?;
         } else {
             info!("rpool already exists; skipping pool creation");
         }
 
         // Create bpool datasets if not present
-        if self.ssh.execute("zfs list -H bpool/BOOT >/dev/null 2>&1").await.is_err() {
+    if !self.ssh.check_silent("zfs list -H bpool/BOOT >/dev/null 2>&1").await.unwrap_or(false) {
             self.create_bpool_datasets(&uuid).await?;
         } else {
             info!("bpool datasets already present; skipping dataset creation");
         }
 
         // Create rpool datasets if not present
-        if self.ssh.execute(&format!("zfs list -H rpool/ROOT/ubuntu_{} >/dev/null 2>&1", uuid)).await.is_err() {
+    if !self.ssh.check_silent(&format!("zfs list -H rpool/ROOT/ubuntu_{} >/dev/null 2>&1", uuid)).await.unwrap_or(false) {
             self.create_rpool_datasets(&uuid).await?;
         } else {
             info!("rpool datasets already present; skipping dataset creation");
