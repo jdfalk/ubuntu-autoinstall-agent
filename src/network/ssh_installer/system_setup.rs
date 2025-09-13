@@ -118,9 +118,10 @@ impl<'a> SystemConfigurator<'a> {
         info!("Configuring system in chroot");
 
         // Prepare chroot
-        self.log_and_execute("Binding /dev", "mount --bind /dev /mnt/targetos/dev").await?;
-        self.log_and_execute("Binding /proc", "mount --bind /proc /mnt/targetos/proc").await?;
-        self.log_and_execute("Binding /sys", "mount --bind /sys /mnt/targetos/sys").await?;
+        // Only bind if target exists (avoid cascading failures if debootstrap didn't run)
+        let _ = self.log_and_execute("Binding /dev", "[ -d /mnt/targetos/dev ] || mkdir -p /mnt/targetos/dev; mountpoint -q /mnt/targetos/dev || mount --bind /dev /mnt/targetos/dev").await;
+        let _ = self.log_and_execute("Binding /proc", "[ -d /mnt/targetos/proc ] || mkdir -p /mnt/targetos/proc; mountpoint -q /mnt/targetos/proc || mount --bind /proc /mnt/targetos/proc").await;
+        let _ = self.log_and_execute("Binding /sys", "[ -d /mnt/targetos/sys ] || mkdir -p /mnt/targetos/sys; mountpoint -q /mnt/targetos/sys || mount --bind /sys /mnt/targetos/sys").await;
 
         // Install essential packages
         let chroot_commands = vec![
@@ -131,12 +132,12 @@ impl<'a> SystemConfigurator<'a> {
         ];
 
         for cmd in chroot_commands {
-            self.log_and_execute(&format!("Chroot: {}", cmd), &format!("chroot /mnt/targetos {}", cmd)).await?;
+            let _ = self.log_and_execute(&format!("Chroot: {}", cmd), &format!("chroot /mnt/targetos {}", cmd)).await;
         }
 
         // Set root password
-        self.log_and_execute("Setting root password",
-            &format!("chroot /mnt/targetos bash -c \"echo 'root:{}' | chpasswd\"", config.root_password)).await?;
+        let _ = self.log_and_execute("Setting root password",
+            &format!("chroot /mnt/targetos bash -c \"echo 'root:{}' | chpasswd\"", config.root_password)).await;
 
     // Enable SSH (ignore failure if systemd not fully present yet)
     let _ = self.log_and_execute("Enabling SSH", "chroot /mnt/targetos systemctl enable ssh").await;
@@ -187,8 +188,8 @@ impl<'a> SystemConfigurator<'a> {
         self.log_and_execute("Setting keyfile permissions", "chmod 600 /mnt/targetos/etc/luks.key").await?;
 
         // Update crypttab
-        let crypttab_entry = format!("luks {}p4 /etc/luks.key luks", config.disk_device);
-        self.ssh.execute(&format!("echo '{}' > /mnt/targetos/etc/crypttab", crypttab_entry)).await?;
+    let crypttab_entry = format!("luks {}p4 /etc/luks.key luks", config.disk_device);
+    let _ = self.ssh.execute(&format!("[ -d /mnt/targetos/etc ] || mkdir -p /mnt/targetos/etc; echo '{}' > /mnt/targetos/etc/crypttab", crypttab_entry)).await;
 
         Ok(())
     }

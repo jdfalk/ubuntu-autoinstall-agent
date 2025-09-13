@@ -31,19 +31,43 @@ impl<'a> ZfsManager<'a> {
         let uuid = self.generate_installation_uuid().await?;
         self.variables.insert("UUID".to_string(), uuid.clone());
 
-        // Create bpool
-        self.create_bpool(config).await?;
+        // Create bpool if not present
+        if self.ssh.execute("zpool list -H bpool >/dev/null 2>&1").await.is_err() {
+            self.create_bpool(config).await?;
+        } else {
+            info!("bpool already exists; skipping pool creation");
+        }
 
-        // Create rpool with encryption
-        self.create_rpool(config).await?;
+        // Create rpool with encryption if not present
+        if self.ssh.execute("zpool list -H rpool >/dev/null 2>&1").await.is_err() {
+            self.create_rpool(config).await?;
+        } else {
+            info!("rpool already exists; skipping pool creation");
+        }
 
-        // Create bpool datasets
-        self.create_bpool_datasets(&uuid).await?;
+        // Create bpool datasets if not present
+        if self.ssh.execute("zfs list -H bpool/BOOT >/dev/null 2>&1").await.is_err() {
+            self.create_bpool_datasets(&uuid).await?;
+        } else {
+            info!("bpool datasets already present; skipping dataset creation");
+        }
 
-        // Create rpool datasets
-        self.create_rpool_datasets(&uuid).await?;
+        // Create rpool datasets if not present
+        if self.ssh.execute(&format!("zfs list -H rpool/ROOT/ubuntu_{} >/dev/null 2>&1", uuid)).await.is_err() {
+            self.create_rpool_datasets(&uuid).await?;
+        } else {
+            info!("rpool datasets already present; skipping dataset creation");
+        }
 
         info!("ZFS pools and datasets created successfully");
+        Ok(())
+    }
+
+    /// Verify ZFS state after creation
+    pub async fn verify_zfs_state(&mut self) -> Result<()> {
+        info!("Verifying ZFS state");
+        self.log_and_execute("Check zpool status", "zpool status").await?;
+        self.log_and_execute("List ZFS datasets", "zfs list").await?;
         Ok(())
     }
 

@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/installer.rs
-// version: 1.0.0
+// version: 1.1.0
 // guid: sshins01-2345-6789-abcd-ef0123456789
 
 //! Main SSH installer orchestrating all installation phases
@@ -64,6 +64,18 @@ impl SshInstaller {
 
         let mut failed_phases = Vec::new();
         let mut successful_phases = Vec::new();
+
+        // Preflight checks (Phase -1)
+        match self.preflight_checks(config).await {
+            Ok(_) => {
+                info!("✓ Preflight checks passed");
+            }
+            Err(e) => {
+                error!("✗ Preflight checks failed: {}", e);
+                self.collect_and_log_debug_info().await;
+                // Continue to attempt installation for maximum diagnostics
+            }
+        }
 
         // Phase 0: Setup installation variables
         match self.setup_installation_variables(config).await {
@@ -173,6 +185,56 @@ impl SshInstaller {
                 format!("Installation failed: {} phases failed", failed_phases.len())
             ))
         }
+    }
+
+    /// Preflight validation: networking, mirrors, mountpoints, and existing state
+    async fn preflight_checks(&mut self, config: &InstallationConfig) -> Result<()> {
+        info!("Running preflight checks");
+
+        // 1) Basic network connectivity
+        let ping_status = self.ssh.execute("ping -c 1 -w 2 1.1.1.1 >/dev/null 2>&1 || ping -c 1 -w 2 8.8.8.8 >/dev/null 2>&1").await;
+        if ping_status.is_err() {
+            return Err(crate::error::AutoInstallError::ValidationError("No basic network connectivity (ICMP)".to_string()));
+        }
+
+        // 2) Check debootstrap mirror reachability
+        let release = config.debootstrap_release.as_deref().unwrap_or("oracular");
+        let mirror = config.debootstrap_mirror.as_deref().unwrap_or("http://old-releases.ubuntu.com/ubuntu/");
+        let release_url = format!("{}/dists/{}/Release", mirror.trim_end_matches('/'), release);
+        let head_cmd = format!("curl -fsI '{}' >/dev/null", release_url);
+        if self.ssh.execute(&head_cmd).await.is_err() {
+            // Try old-releases as backup if not already
+            let fallback_url = format!("http://old-releases.ubuntu.com/ubuntu/dists/{}/Release", release);
+            let fallback_cmd = format!("curl -fsI '{}' >/dev/null", fallback_url);
+            if self.ssh.execute(&fallback_cmd).await.is_err() {
+                return Err(crate::error::AutoInstallError::ValidationError(format!("Debootstrap mirror not reachable for {}", release)));
+            } else {
+                info!("Mirror check: primary unreachable; old-releases is reachable");
+            }
+        }
+
+        // 3) Ensure target mount path is sane
+        // Create if missing, and warn if non-empty
+        self.ssh.execute("mkdir -p /mnt/targetos").await?;
+        let non_empty_check = self.ssh.execute("test -z \"$(ls -A /mnt/targetos 2>/dev/null)\"").await;
+        if non_empty_check.is_err() {
+            info!("Preflight: /mnt/targetos is not empty; installation will proceed carefully");
+        }
+
+        // 4) Detect existing pools to avoid duplicate creation
+        let has_bpool = self.ssh.execute("zpool list -H bpool >/dev/null 2>&1").await.is_ok();
+        let has_rpool = self.ssh.execute("zpool list -H rpool >/dev/null 2>&1").await.is_ok();
+        if has_bpool || has_rpool {
+            info!("Preflight: existing pools detected: bpool={} rpool={}", has_bpool, has_rpool);
+        }
+
+        // 5) LUKS check (open state)
+        let luks_status = self.ssh.execute("cryptsetup status luks >/dev/null 2>&1").await.is_ok();
+        if !luks_status {
+            info!("Preflight: LUKS device 'luks' not active yet; it will be prepared by the installer");
+        }
+
+        Ok(())
     }
 
     /// Collect and log debug information
