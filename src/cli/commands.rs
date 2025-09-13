@@ -1,5 +1,5 @@
 // file: src/cli/commands.rs
-// version: 1.1.0
+// version: 1.2.0
 // guid: g7h8i9j0-k1l2-3456-7890-123456ghijkl
 
 //! Command implementations for the CLI
@@ -244,6 +244,7 @@ pub async fn ssh_install_command(
     username: Option<String>,
     investigate_only: bool,
     dry_run: bool,
+    hold_on_failure: bool,
 ) -> Result<()> {
     let username = username.unwrap_or_else(|| "ubuntu".to_string());
     let _hostname = hostname.unwrap_or_else(|| "len-serv-003".to_string());
@@ -308,7 +309,7 @@ pub async fn ssh_install_command(
     // For automation purposes, we'll proceed directly
 
     info!("Starting full ZFS+LUKS Ubuntu installation...");
-    installer.perform_installation(&config).await?;
+    installer.perform_installation_with_options(&config, hold_on_failure).await?;
 
     info!("SSH installation completed successfully!");
     info!("Target machine should now be ready to boot from local disk");

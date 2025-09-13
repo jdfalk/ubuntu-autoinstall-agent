@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/installer.rs
-// version: 1.5.0
+// version: 1.6.0
 // guid: sshins01-2345-6789-abcd-ef0123456789
 
 //! Main SSH installer orchestrating all installation phases
@@ -30,6 +30,110 @@ impl SshInstaller {
             connected: false,
             variables: HashMap::new(),
         }
+    }
+
+    /// Perform installation with additional options (e.g., hold-on-failure)
+    pub async fn perform_installation_with_options(&mut self, config: &InstallationConfig, hold_on_failure: bool) -> Result<()> {
+        if !hold_on_failure {
+            return self.perform_installation(config).await;
+        }
+
+        if !self.connected {
+            return Err(crate::error::AutoInstallError::SshError(
+                "Not connected to target system".to_string()
+            ));
+        }
+
+        info!("Starting full ZFS + LUKS installation for {} (hold-on-failure enabled)", config.hostname);
+
+        let mut failed_phases: Vec<String> = Vec::new();
+        let mut successful_phases: Vec<&str> = Vec::new();
+
+        // Preflight checks (continue for diagnostics even if failing)
+        if let Err(e) = self.preflight_checks(config).await {
+            error!("✗ Preflight checks failed: {}", e);
+            // Do not enter hold on preflight to allow env setup and better diagnostics
+        } else {
+            info!("✓ Preflight checks passed");
+        }
+
+        // Phase 0: Setup installation variables
+        if let Err(e) = self.setup_installation_variables(config).await {
+            failed_phases.push(format!("Phase 0: Setup variables - {}", e));
+            return self.enter_hold_mode("Phase 0 failed", &successful_phases, &failed_phases).await;
+        } else {
+            successful_phases.push("Phase 0: Setup variables");
+        }
+
+        // Phase 1: Package installation
+        if let Err(e) = self.phase_1_package_installation().await {
+            failed_phases.push(format!("Phase 1: Package installation - {}", e));
+            return self.enter_hold_mode("Phase 1 failed", &successful_phases, &failed_phases).await;
+        } else {
+            successful_phases.push("Phase 1: Package installation");
+        }
+
+        // Phase 2: Disk preparation
+        if let Err(e) = self.phase_2_disk_preparation(config).await {
+            failed_phases.push(format!("Phase 2: Disk preparation - {}", e));
+            return self.enter_hold_mode("Phase 2 failed", &successful_phases, &failed_phases).await;
+        } else {
+            successful_phases.push("Phase 2: Disk preparation");
+        }
+
+        // Phase 3: ZFS pool creation
+        if let Err(e) = self.phase_3_zfs_creation(config).await {
+            failed_phases.push(format!("Phase 3: ZFS creation - {}", e));
+            return self.enter_hold_mode("Phase 3 failed", &successful_phases, &failed_phases).await;
+        } else {
+            successful_phases.push("Phase 3: ZFS creation");
+        }
+
+        // Phase 4: Base system installation
+        if let Err(e) = self.phase_4_base_system(config).await {
+            failed_phases.push(format!("Phase 4: Base system - {}", e));
+            return self.enter_hold_mode("Phase 4 failed", &successful_phases, &failed_phases).await;
+        } else {
+            successful_phases.push("Phase 4: Base system");
+        }
+
+        // Phase 5: System configuration
+        if let Err(e) = self.phase_5_system_configuration(config).await {
+            failed_phases.push(format!("Phase 5: System configuration - {}", e));
+            return self.enter_hold_mode("Phase 5 failed", &successful_phases, &failed_phases).await;
+        } else {
+            successful_phases.push("Phase 5: System configuration");
+        }
+
+        // Phase 6: Final setup — in hold mode we still want to complete when all previous phases succeeded
+        if let Err(e) = self.phase_6_final_setup(config).await {
+            failed_phases.push(format!("Phase 6: Final setup - {}", e));
+            return self.enter_hold_mode("Phase 6 failed", &successful_phases, &failed_phases).await;
+        } else {
+            successful_phases.push("Phase 6: Final setup");
+        }
+
+        // All good
+        self.generate_installation_report(&successful_phases, &failed_phases).await;
+        info!("🎉 Installation completed successfully for {}", config.hostname);
+        Ok(())
+    }
+
+    /// Enter hold mode: stop immediately, write logs, generate report, and keep SSH session open
+    async fn enter_hold_mode(&mut self, reason: &str, successful_phases: &[&str], failed_phases: &[String]) -> Result<()> {
+        error!("🔒 Hold-on-failure is enabled — stopping immediately: {}", reason);
+        self.collect_and_log_debug_info().await;
+        self.generate_installation_report(successful_phases, failed_phases).await;
+
+        // IMPORTANT: Do NOT cleanup/unmount/export anything here — leave the system as-is
+        // Keep the SSH session alive for live debugging by running a long-lived no-op on the target
+        // We intentionally block here to keep the process and SSH session open
+        let keepalive_cmd = "bash -lc 'echo \"[uaa] Hold mode active — leaving system mounted for debugging.\"; echo \"Press Ctrl-C locally when done.\"; while true; do sleep 3600; done'";
+        let _ = self.ssh.execute(keepalive_cmd).await;
+
+        Err(crate::error::AutoInstallError::InstallationError(
+            "Installation halted due to failure (hold-on-failure)".to_string()
+        ))
     }
 
     /// Connect to target system
