@@ -208,9 +208,9 @@ impl<'a> SystemConfigurator<'a> {
         let esp_uuid = esp_uuid_out.trim();
         if !esp_uuid.is_empty() {
             let fstab_line = format!("UUID={} /boot/efi vfat umask=0077 0 1", esp_uuid);
-            // Single-quote the bash -lc argument; use double quotes inside for grep pattern and echo payload
+            // Use double-quoted bash -lc payload, single-quoted grep regex and echo payload
             let cmd = format!(
-                r##"bash -lc "grep -q '^UUID=.* /boot/efi ' /mnt/targetos/etc/fstab 2>/dev/null || echo '{0}' >> /mnt/targetos/etc/fstab""##,
+                "bash -lc \"grep -q '^UUID=.* /boot/efi ' /mnt/targetos/etc/fstab 2>/dev/null || echo '{0}' >> /mnt/targetos/etc/fstab\"",
                 fstab_line
             );
             let _ = self.ssh.execute(&cmd).await;
