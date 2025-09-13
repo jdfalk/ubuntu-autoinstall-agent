@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/system_setup.rs
-// version: 1.4.0
+// version: 1.5.0
 // guid: sshsys01-2345-6789-abcd-ef0123456789
 
 //! System setup and configuration for SSH installation
@@ -175,8 +175,18 @@ impl<'a> SystemConfigurator<'a> {
     }
 
     /// Configure GRUB in chroot
-    pub async fn configure_grub_in_chroot(&mut self, _config: &InstallationConfig) -> Result<()> {
+    pub async fn configure_grub_in_chroot(&mut self, config: &InstallationConfig) -> Result<()> {
         info!("Configuring GRUB in chroot");
+
+        // Ensure ESP is mounted inside the target (some environments unmount it between phases)
+        let _ = self.log_and_execute(
+            "Ensure ESP mountpoint",
+            "[ -d /mnt/targetos/boot/efi ] || mkdir -p /mnt/targetos/boot/efi"
+        ).await;
+        let _ = self.log_and_execute(
+            "Mount ESP if not mounted",
+            &format!("mountpoint -q /mnt/targetos/boot/efi || mount {}p1 /mnt/targetos/boot/efi || true", config.disk_device)
+        ).await;
 
         // Update GRUB configuration
         self.log_and_execute(

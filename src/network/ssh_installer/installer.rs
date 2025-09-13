@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/installer.rs
-// version: 1.3.0
+// version: 1.5.0
 // guid: sshins01-2345-6789-abcd-ef0123456789
 
 //! Main SSH installer orchestrating all installation phases
@@ -256,6 +256,31 @@ impl SshInstaller {
                 error!("=== DEBUG INFORMATION ===");
                 error!("{}", debug_info);
                 error!("=== END DEBUG INFORMATION ===");
+
+                // Persist logs remotely and fetch them locally for archives
+                // Create a timestamp from UNIX epoch seconds (avoid extra deps)
+                let ts = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+                    Ok(dur) => dur.as_secs().to_string(),
+                    Err(_) => "0".to_string(),
+                };
+                let remote_dir = "/var/tmp/uaalogs";
+                let remote_path = format!("{}/install-debug-{}.log", remote_dir, ts);
+                let _ = self.ssh.execute(&format!("mkdir -p {}", remote_dir)).await;
+                let _ = self.ssh.execute(&format!(
+                    "bash -lc 'cat > {} <<\'EOF\'\n{}\nEOF'",
+                    remote_path, debug_info.replace("'", "'\\''")
+                )).await;
+
+                // Download to local logs folder
+                let base_dir = std::env::current_dir().ok().map(|p| p.display().to_string()).unwrap_or_else(|| ".".to_string());
+                let local_dir = format!("{}/logs/{}", base_dir, self.variables.get("HOSTNAME").cloned().unwrap_or_else(|| "unknown-host".to_string()));
+                let _ = std::fs::create_dir_all(&local_dir);
+                let local_path = format!("{}/{}", local_dir, std::path::Path::new(&remote_path).file_name().unwrap().to_string_lossy());
+                if let Err(e) = self.ssh.download_file(&remote_path, &local_path).await {
+                    error!("Failed to download debug log: {}", e);
+                } else {
+                    info!("Saved debug log to {}", local_path);
+                }
             }
             Err(e) => {
                 error!("Failed to collect debug information: {}", e);
