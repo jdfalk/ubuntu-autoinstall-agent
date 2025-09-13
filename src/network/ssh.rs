@@ -1,5 +1,5 @@
 // file: src/network/ssh.rs
-// version: 1.0.0
+// version: 1.1.0
 // guid: t0u1v2w3-x4y5-6789-0123-456789tuvwxy
 
 //! SSH client for remote deployment operations
@@ -84,10 +84,17 @@ impl SshClient {
                 format!("Failed to execute command: {}", e)
             ))?;
 
-        let mut output = String::new();
-        channel.read_to_string(&mut output)
+        let mut stdout = String::new();
+        let mut stderr = String::new();
+
+        // Read stdout and stderr
+        channel.read_to_string(&mut stdout)
             .map_err(|e| crate::error::AutoInstallError::SshError(
-                format!("Failed to read command output: {}", e)
+                format!("Failed to read stdout: {}", e)
+            ))?;
+        channel.stderr().read_to_string(&mut stderr)
+            .map_err(|e| crate::error::AutoInstallError::SshError(
+                format!("Failed to read stderr: {}", e)
             ))?;
 
         channel.wait_close()
@@ -101,10 +108,14 @@ impl SshClient {
             ))?;
 
         if exit_status != 0 {
-            error!("Command failed with exit code {}: {}", exit_status, output);
-            return Err(crate::error::AutoInstallError::SshError(
-                format!("Command failed with exit code {}: {}", exit_status, output)
-            ));
+            error!("Command failed with exit code {}", exit_status);
+            if !stdout.trim().is_empty() { error!("STDOUT: {}", stdout); }
+            if !stderr.trim().is_empty() { error!("STDERR: {}", stderr); }
+            return Err(crate::error::AutoInstallError::ProcessError {
+                command: command.to_string(),
+                exit_code: Some(exit_status),
+                stderr: if stderr.is_empty() { stdout } else { stderr },
+            });
         }
 
         debug!("Command executed successfully");
@@ -130,10 +141,16 @@ impl SshClient {
                 format!("Failed to execute command: {}", e)
             ))?;
 
-        let mut output = String::new();
-        channel.read_to_string(&mut output)
+        let mut stdout = String::new();
+        let mut stderr = String::new();
+
+        channel.read_to_string(&mut stdout)
             .map_err(|e| crate::error::AutoInstallError::SshError(
-                format!("Failed to read command output: {}", e)
+                format!("Failed to read stdout: {}", e)
+            ))?;
+        channel.stderr().read_to_string(&mut stderr)
+            .map_err(|e| crate::error::AutoInstallError::SshError(
+                format!("Failed to read stderr: {}", e)
             ))?;
 
         channel.wait_close()
@@ -147,14 +164,18 @@ impl SshClient {
             ))?;
 
         if exit_status != 0 {
-            error!("Command failed with exit code {}: {}", exit_status, output);
-            return Err(crate::error::AutoInstallError::SshError(
-                format!("Command failed with exit code {}: {}", exit_status, output)
-            ));
+            error!("Command failed with exit code {}", exit_status);
+            if !stdout.trim().is_empty() { error!("STDOUT: {}", stdout); }
+            if !stderr.trim().is_empty() { error!("STDERR: {}", stderr); }
+            return Err(crate::error::AutoInstallError::ProcessError {
+                command: command.to_string(),
+                exit_code: Some(exit_status),
+                stderr: if stderr.is_empty() { stdout } else { stderr },
+            });
         }
 
-        debug!("Command executed successfully: {}", output.len());
-        Ok(output)
+        debug!("Command executed successfully: {}", stdout.len());
+        Ok(stdout)
     }
 
     /// Execute command with detailed error reporting but don't fail the session

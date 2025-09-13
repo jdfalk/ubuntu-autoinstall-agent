@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/system_setup.rs
-// version: 1.5.0
+// version: 1.7.0
 // guid: sshsys01-2345-6789-abcd-ef0123456789
 
 //! System setup and configuration for SSH installation
@@ -117,11 +117,29 @@ impl<'a> SystemConfigurator<'a> {
     async fn configure_system_in_chroot(&mut self, config: &InstallationConfig) -> Result<()> {
         info!("Configuring system in chroot");
 
-        // Prepare chroot
-        // Only bind if target exists (avoid cascading failures if debootstrap didn't run)
-        let _ = self.log_and_execute("Binding /dev", "[ -d /mnt/targetos/dev ] || mkdir -p /mnt/targetos/dev; mountpoint -q /mnt/targetos/dev || mount --bind /dev /mnt/targetos/dev").await;
-        let _ = self.log_and_execute("Binding /proc", "[ -d /mnt/targetos/proc ] || mkdir -p /mnt/targetos/proc; mountpoint -q /mnt/targetos/proc || mount --bind /proc /mnt/targetos/proc").await;
-        let _ = self.log_and_execute("Binding /sys", "[ -d /mnt/targetos/sys ] || mkdir -p /mnt/targetos/sys; mountpoint -q /mnt/targetos/sys || mount --bind /sys /mnt/targetos/sys").await;
+        // Prepare chroot (align with OpenZFS Ubuntu root-on-ZFS guidance)
+        // Use rbind + make-rslave so nested mounts propagate correctly
+        let _ = self.log_and_execute(
+            "Binding /dev (rbind)",
+            "[ -d /mnt/targetos/dev ] || mkdir -p /mnt/targetos/dev; mountpoint -q /mnt/targetos/dev || mount --rbind /dev /mnt/targetos/dev; mount --make-rslave /mnt/targetos/dev"
+        ).await;
+        // Ensure devpts exists (rbind should cover it, but this is a safe fallback)
+        let _ = self.log_and_execute(
+            "Ensuring /dev/pts",
+            "[ -d /mnt/targetos/dev/pts ] || mkdir -p /mnt/targetos/dev/pts; mountpoint -q /mnt/targetos/dev/pts || mount -t devpts devpts /mnt/targetos/dev/pts || true"
+        ).await;
+        let _ = self.log_and_execute(
+            "Binding /proc (rbind)",
+            "[ -d /mnt/targetos/proc ] || mkdir -p /mnt/targetos/proc; mountpoint -q /mnt/targetos/proc || mount --rbind /proc /mnt/targetos/proc; mount --make-rslave /mnt/targetos/proc"
+        ).await;
+        let _ = self.log_and_execute(
+            "Binding /sys (rbind)",
+            "[ -d /mnt/targetos/sys ] || mkdir -p /mnt/targetos/sys; mountpoint -q /mnt/targetos/sys || mount --rbind /sys /mnt/targetos/sys; mount --make-rslave /mnt/targetos/sys"
+        ).await;
+        let _ = self.log_and_execute(
+            "Binding /run (rbind)",
+            "[ -d /mnt/targetos/run ] || mkdir -p /mnt/targetos/run; mountpoint -q /mnt/targetos/run || mount --rbind /run /mnt/targetos/run; mount --make-rslave /mnt/targetos/run"
+        ).await;
 
         // Fix DNS inside chroot: resolv.conf is often a broken symlink in a chroot
         // Remove it and write a simple resolv.conf with public DNS to ensure apt can resolve
@@ -133,7 +151,8 @@ impl<'a> SystemConfigurator<'a> {
         // Install essential packages
         let chroot_commands = vec![
             "apt update",
-            "DEBIAN_FRONTEND=noninteractive apt install -y zfsutils-linux grub-efi-amd64 grub-efi-amd64-signed shim-signed",
+            // Include efibootmgr (required by grub on UEFI) and zfs-initramfs for proper initramfs hooks
+            "DEBIAN_FRONTEND=noninteractive apt install -y zfsutils-linux zfs-initramfs grub-efi-amd64 grub-efi-amd64-signed shim-signed efibootmgr",
             "DEBIAN_FRONTEND=noninteractive apt install -y linux-image-generic linux-headers-generic",
             "DEBIAN_FRONTEND=noninteractive apt install -y openssh-server vim htop curl",
         ];
@@ -188,11 +207,29 @@ impl<'a> SystemConfigurator<'a> {
             &format!("mountpoint -q /mnt/targetos/boot/efi || mount {}p1 /mnt/targetos/boot/efi || true", config.disk_device)
         ).await;
 
-        // Update GRUB configuration
-        self.log_and_execute(
+        // Ensure efivarfs is mounted inside chroot (some environments need this for NVRAM writes)
+        let _ = self.log_and_execute(
+            "Ensure efivarfs",
+            "chroot /mnt/targetos bash -lc '[ -d /sys/firmware/efi/efivars ] || mkdir -p /sys/firmware/efi/efivars; mountpoint -q /sys/firmware/efi/efivars || mount -t efivarfs efivarfs /sys/firmware/efi/efivars || true'"
+        ).await;
+
+        // Update GRUB configuration - try normal path first, then --no-nvram, then --removable as last resort
+        if let Err(_e) = self.log_and_execute(
             "Installing GRUB to ESP",
             "chroot /mnt/targetos bash -lc 'grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=ubuntu --recheck'"
-        ).await?;
+        ).await {
+            // Fallback for systems that cannot write NVRAM (headless, buggy firmware, or efivars access issues)
+            if let Err(_e2) = self.log_and_execute(
+                "Installing GRUB to ESP (no-nvram fallback)",
+                "chroot /mnt/targetos bash -lc 'grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=ubuntu --recheck --no-nvram'"
+            ).await {
+                // Final fallback: install as removable media bootloader; many UEFI firmwares will pick this up
+                self.log_and_execute(
+                    "Installing GRUB to ESP (removable fallback)",
+                    "chroot /mnt/targetos bash -lc 'grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=ubuntu --recheck --removable'"
+                ).await?;
+            }
+        }
 
         self.log_and_execute("Updating GRUB config", "chroot /mnt/targetos bash -lc 'update-grub'").await?;
 
@@ -219,11 +256,12 @@ impl<'a> SystemConfigurator<'a> {
     pub async fn final_cleanup(&mut self, _config: &InstallationConfig) -> Result<()> {
         info!("Performing final cleanup");
 
-        // Unmount chroot bindings
-    // Make unmounts idempotent
-    self.log_and_execute("Unmounting /sys", "umount /mnt/targetos/sys || true").await?;
-    self.log_and_execute("Unmounting /proc", "umount /mnt/targetos/proc || true").await?;
-    self.log_and_execute("Unmounting /dev", "umount /mnt/targetos/dev || true").await?;
+        // Unmount chroot bindings (recursive for rbind mounts)
+        // Make unmounts idempotent
+        self.log_and_execute("Unmounting /sys (recursive)", "umount -R /mnt/targetos/sys || true").await?;
+        self.log_and_execute("Unmounting /proc (recursive)", "umount -R /mnt/targetos/proc || true").await?;
+        self.log_and_execute("Unmounting /dev (recursive)", "umount -R /mnt/targetos/dev || true").await?;
+        self.log_and_execute("Unmounting /run (recursive)", "umount -R /mnt/targetos/run || true").await?;
 
         // Unmount filesystems
     self.log_and_execute("Unmounting ESP", "umount /mnt/targetos/boot/efi || true").await?;
