@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/installer.rs
-// version: 1.2.0
+// version: 1.3.0
 // guid: sshins01-2345-6789-abcd-ef0123456789
 
 //! Main SSH installer orchestrating all installation phases
@@ -198,8 +198,8 @@ impl SshInstaller {
         }
 
         // 2) Check debootstrap mirror reachability
-        let release = config.debootstrap_release.as_deref().unwrap_or("oracular");
-        let mirror = config.debootstrap_mirror.as_deref().unwrap_or("http://old-releases.ubuntu.com/ubuntu/");
+        let release = config.debootstrap_release.as_deref().unwrap_or("plucky");
+        let mirror = config.debootstrap_mirror.as_deref().unwrap_or("http://archive.ubuntu.com/ubuntu/");
         let release_url = format!("{}/dists/{}/Release", mirror.trim_end_matches('/'), release);
         let head_cmd = format!("curl -fsI '{}' >/dev/null", release_url);
         if self.ssh.execute(&head_cmd).await.is_err() {

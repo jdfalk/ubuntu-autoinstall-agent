@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/system_setup.rs
-// version: 1.2.0
+// version: 1.3.0
 // guid: sshsys01-2345-6789-abcd-ef0123456789
 
 //! System setup and configuration for SSH installation
@@ -27,8 +27,8 @@ impl<'a> SystemConfigurator<'a> {
         self.log_and_execute("Mounting ESP", &format!("mount {}p1 /mnt/targetos/boot/efi", config.disk_device)).await?;
 
         // Install base system using debootstrap (codename/mirror configurable)
-        let release = config.debootstrap_release.as_deref().unwrap_or("oracular");
-        let mirror = config.debootstrap_mirror.as_deref().unwrap_or("http://old-releases.ubuntu.com/ubuntu/");
+        let release = config.debootstrap_release.as_deref().unwrap_or("plucky");
+        let mirror = config.debootstrap_mirror.as_deref().unwrap_or("http://archive.ubuntu.com/ubuntu/");
         let primary_cmd = format!("debootstrap {} /mnt/targetos {}", release, mirror);
         if let Err(_e) = self.log_and_execute("Running debootstrap", &primary_cmd).await {
             // Fallback to old-releases if not already using it
