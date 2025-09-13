@@ -151,9 +151,10 @@ impl<'a> SystemConfigurator<'a> {
         // Install essential packages
         let chroot_commands = vec![
             "apt update",
-            // Include efibootmgr (required by grub on UEFI) and zfs-initramfs for proper initramfs hooks
-            "DEBIAN_FRONTEND=noninteractive apt install -y zfsutils-linux zfs-initramfs grub-efi-amd64 grub-efi-amd64-signed shim-signed efibootmgr",
-            "DEBIAN_FRONTEND=noninteractive apt install -y linux-image-generic linux-headers-generic",
+            // Core UEFI + ZFS packages
+            "DEBIAN_FRONTEND=noninteractive apt install -y grub-efi-amd64 grub-efi-amd64-signed linux-image-generic shim-signed zfs-initramfs zfsutils-linux zsys efibootmgr",
+            // Helpful tooling
+            "DEBIAN_FRONTEND=noninteractive apt install -y linux-headers-generic",
             "DEBIAN_FRONTEND=noninteractive apt install -y openssh-server vim htop curl",
         ];
 
