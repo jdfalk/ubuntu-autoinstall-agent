@@ -1,5 +1,5 @@
 // file: src/image/builder/disk.rs
-// version: 1.0.0
+// version: 1.0.1
 // guid: b1b2b3b4-c5c6-7890-1234-567890bcdefg
 
 //! Disk creation and management functionality
@@ -23,7 +23,7 @@ impl DiskManager {
     /// Create QEMU disk image
     pub async fn create_qemu_disk(&self, disk_path: &Path, size_gb: u32) -> Result<()> {
         let output = Command::new("qemu-img")
-            .args(&[
+            .args([
                 "create",
                 "-f", "qcow2",
                 disk_path.to_str().unwrap(),
