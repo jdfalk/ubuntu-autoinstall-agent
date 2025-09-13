@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/system_setup.rs
-// version: 1.1.0
+// version: 1.2.0
 // guid: sshsys01-2345-6789-abcd-ef0123456789
 
 //! System setup and configuration for SSH installation
@@ -210,6 +210,10 @@ impl<'a> SystemConfigurator<'a> {
         // Export ZFS pools
     self.log_and_execute("Exporting bpool", "zpool export bpool || true").await?;
     self.log_and_execute("Exporting rpool", "zpool export rpool || true").await?;
+
+        // Unmount and close LUKS if present
+        let _ = self.log_and_execute("Unmounting /mnt/luks if mounted", "mountpoint -q /mnt/luks && umount -lf /mnt/luks || true").await;
+        let _ = self.log_and_execute("Closing LUKS mapper if open", "cryptsetup status luks >/dev/null 2>&1 && cryptsetup close luks || true").await;
 
         info!("Final cleanup completed");
         Ok(())

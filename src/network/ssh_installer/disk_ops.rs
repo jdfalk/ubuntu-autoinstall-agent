@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/disk_ops.rs
-// version: 1.0.0
+// version: 1.1.0
 // guid: sshdisk1-2345-6789-abcd-ef0123456789
 
 //! Disk operations for SSH installation
@@ -38,6 +38,57 @@ impl<'a> DiskManager<'a> {
         Ok(())
     }
 
+    /// Perform a robust recovery cleanup and wipe in case of prior failures
+    ///
+    /// This will:
+    /// - Unmount chroot bind mounts and anything under /mnt/targetos
+    /// - Unmount /mnt/luks if mounted
+    /// - Unmount ZFS filesystems and export/destroy pools (best-effort)
+    /// - Close any open LUKS mapper devices
+    /// - Wipe the disk GPT and FS signatures
+    pub async fn recover_after_failure_and_wipe(&mut self, config: &InstallationConfig) -> Result<()> {
+        info!("Recovery: cleaning up mounts, closing LUKS, exporting ZFS, and wiping disk");
+
+        // 1) Unmount common chroot bind mounts and EFI if present
+        let _ = self.log_and_execute("Recovery: umount /mnt/targetos/sys", "umount -lf /mnt/targetos/sys 2>/dev/null || true").await;
+        let _ = self.log_and_execute("Recovery: umount /mnt/targetos/proc", "umount -lf /mnt/targetos/proc 2>/dev/null || true").await;
+        let _ = self.log_and_execute("Recovery: umount /mnt/targetos/dev", "umount -lf /mnt/targetos/dev 2>/dev/null || true").await;
+        let _ = self.log_and_execute("Recovery: umount /mnt/targetos/boot/efi", "umount -lf /mnt/targetos/boot/efi 2>/dev/null || true").await;
+
+        // 2) Unmount anything still mounted under /mnt/targetos (deepest-first)
+        let _ = self.log_and_execute(
+            "Recovery: unmount all under /mnt/targetos",
+            "mount | awk '$3 ~ /^\\/mnt\\/targetos/ {print $3}' | sort -r | xargs -r -n1 umount -lf 2>/dev/null || true"
+        ).await;
+
+        // 3) Unmount ZFS filesystems and export pools (best-effort)
+        let _ = self.log_and_execute("Recovery: zfs unmount -a", "zfs unmount -a 2>/dev/null || true").await;
+        let _ = self.log_and_execute("Recovery: zpool export -a", "zpool export -a 2>/dev/null || true").await;
+
+        // As an extra measure, try to destroy common pools if they linger
+        let _ = self.log_and_execute("Recovery: destroy bpool", "zpool destroy bpool 2>/dev/null || true").await;
+        let _ = self.log_and_execute("Recovery: destroy rpool", "zpool destroy rpool 2>/dev/null || true").await;
+
+        // 4) Unmount /mnt/luks if mounted
+        let _ = self.log_and_execute(
+            "Recovery: unmount /mnt/luks if mounted",
+            "mountpoint -q /mnt/luks && umount -lf /mnt/luks || true"
+        ).await;
+
+        // 5) Close LUKS mapper devices
+        // Try the known name first, then any crypt devices discovered under /dev/mapper
+        let _ = self.log_and_execute("Recovery: close luks", "cryptsetup close luks 2>/dev/null || true").await;
+        let _ = self.log_and_execute(
+            "Recovery: close any crypt mappers",
+            "for m in $(ls /dev/mapper 2>/dev/null | grep -E '^(luks|crypt)' || true); do cryptsetup close \"$m\" 2>/dev/null || true; done"
+        ).await;
+
+        // 6) Finally wipe the disk and GPT
+        self.wipe_disk(config).await?;
+
+        Ok(())
+    }
+
     /// Clean up existing mounts and filesystem structures
     async fn cleanup_existing_mounts(&mut self, config: &InstallationConfig) -> Result<()> {
         info!("Cleaning up existing mounts and filesystems");
@@ -59,6 +110,9 @@ impl<'a> DiskManager<'a> {
 
         // Close any open LUKS devices
         self.log_and_execute("Closing LUKS devices", "cryptsetup close luks || true").await?;
+
+        // Also unmount /mnt/luks if it is mounted (best-effort)
+        let _ = self.log_and_execute("Unmount /mnt/luks if mounted", "mountpoint -q /mnt/luks && umount -lf /mnt/luks || true").await;
 
         Ok(())
     }

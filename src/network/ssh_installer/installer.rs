@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/installer.rs
-// version: 1.1.0
+// version: 1.2.0
 // guid: sshins01-2345-6789-abcd-ef0123456789
 
 //! Main SSH installer orchestrating all installation phases
@@ -228,10 +228,21 @@ impl SshInstaller {
             info!("Preflight: existing pools detected: bpool={} rpool={}", has_bpool, has_rpool);
         }
 
-        // 5) LUKS check (open state)
-        let luks_status = self.ssh.execute("cryptsetup status luks >/dev/null 2>&1").await.is_ok();
-        if !luks_status {
-            info!("Preflight: LUKS device 'luks' not active yet; it will be prepared by the installer");
+        // 5) LUKS and residual mounts check; recover if needed
+        let luks_active = self.ssh.execute("cryptsetup status luks >/dev/null 2>&1").await.is_ok();
+        let luks_mounted = self.ssh.execute("mountpoint -q /mnt/luks").await.is_ok();
+        let target_has_mounts = self.ssh.execute("mount | grep -q '/mnt/targetos' ").await.is_ok();
+        let pools_exist = self.ssh.execute("zpool list -H bpool >/dev/null 2>&1").await.is_ok() ||
+            self.ssh.execute("zpool list -H rpool >/dev/null 2>&1").await.is_ok();
+
+        if luks_active || luks_mounted || target_has_mounts || pools_exist {
+            info!("Preflight: residual state detected (luks_active={}, luks_mounted={}, target_mounts={}, pools_exist={}); attempting recovery/reset",
+                luks_active, luks_mounted, target_has_mounts, pools_exist);
+            let mut disk_manager = DiskManager::new(&mut self.ssh);
+            // Best-effort recovery; if it fails we'll still attempt to proceed to capture diagnostics
+            let _ = disk_manager.recover_after_failure_and_wipe(config).await;
+        } else {
+            info!("Preflight: no residual mounts or LUKS/ZFS state detected");
         }
 
         Ok(())
