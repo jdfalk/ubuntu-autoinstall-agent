@@ -1,5 +1,5 @@
 // file: src/security/validation.rs
-// version: 1.0.0
+// version: 1.0.1
 // guid: r8s9t0u1-v2w3-4567-8901-234567rstuvw
 
 //! Input validation utilities
@@ -121,7 +121,7 @@ impl ValidationUtils {
         }
 
         // Must start with letter or underscore
-        if !username.chars().next().unwrap().is_ascii_lowercase() && username.chars().next().unwrap() != '_' {
+        if !username.chars().next().unwrap().is_ascii_lowercase() && !username.starts_with('_') {
             return Err(crate::error::AutoInstallError::ValidationError(
                 "Username must start with lowercase letter or underscore".to_string()
             ));
@@ -147,7 +147,7 @@ impl ValidationUtils {
 
     /// Validate timezone
     pub fn validate_timezone(timezone: &str) -> Result<()> {
-        // Basic timezone validation - in a real implementation, 
+        // Basic timezone validation - in a real implementation,
         // this would check against a comprehensive timezone database
         if timezone.is_empty() {
             return Err(crate::error::AutoInstallError::ValidationError(

@@ -1,5 +1,5 @@
 // file: src/main.rs
-// version: 1.1.0
+// version: 1.1.1
 // guid: h8i9j0k1-l2m3-4567-8901-234567hijklm
 
 //! Ubuntu AutoInstall Agent - Main entry point
@@ -80,7 +80,7 @@ async fn cleanup_on_exit() {
 
     // Kill any running QEMU processes
     let _ = tokio::process::Command::new("pkill")
-        .args(&["-f", "qemu-system"])
+        .args(["-f", "qemu-system"])
         .output()
         .await;
 

@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/investigation.rs
-// version: 1.0.0
+// version: 1.1.0
 // guid: sshinv01-2345-6789-abcd-ef0123456789
 
 //! System investigation capabilities for SSH installation
@@ -22,25 +22,16 @@ impl<'a> SystemInvestigator<'a> {
     pub async fn investigate_system(&mut self) -> Result<SystemInfo> {
         info!("Starting comprehensive system investigation");
 
-        let mut system_info = SystemInfo::default();
-
-        // Basic system information
-        system_info.hostname = self.get_command_output("hostname").await?;
-        system_info.kernel_version = self.get_command_output("uname -r").await?;
-        system_info.os_release = self.get_command_output("cat /etc/os-release | head -1").await?;
-
-        // Investigate disk layout
-        system_info.disk_info = self.investigate_disks().await?;
-
-        // Check network configuration
-        system_info.network_info = self.investigate_network().await?;
-
-        // Check available tools
-        system_info.available_tools = self.check_available_tools().await?;
-
-        // Check memory and CPU
-        system_info.memory_info = self.get_command_output("free -h").await?;
-        system_info.cpu_info = self.get_command_output("lscpu").await?;
+        let system_info = SystemInfo {
+            hostname: self.get_command_output("hostname").await?,
+            kernel_version: self.get_command_output("uname -r").await?,
+            os_release: self.get_command_output("cat /etc/os-release | head -1").await?,
+            disk_info: self.investigate_disks().await?,
+            network_info: self.investigate_network().await?,
+            available_tools: self.check_available_tools().await?,
+            memory_info: self.get_command_output("free -h").await?,
+            cpu_info: self.get_command_output("lscpu").await?,
+        };
 
         info!("System investigation completed");
         Ok(system_info)

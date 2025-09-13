@@ -1,5 +1,5 @@
 // file: src/utils/system.rs
-// version: 1.0.0
+// version: 1.1.1
 // guid: w3x4y5z6-a7b8-9012-3456-789012wxyzab
 
 //! System utility functions
@@ -36,13 +36,21 @@ impl SystemUtils {
 
     /// Check if running as root
     pub fn is_root() -> bool {
-        unsafe { libc::getuid() == 0 }
+        #[cfg(unix)]
+        {
+            unsafe { libc::getuid() == 0 }
+        }
+        #[cfg(windows)]
+        {
+            // On Windows, "root" concept doesn't apply; assume false
+            false
+        }
     }
 
     /// Get available memory in MB
     pub async fn get_available_memory() -> Result<u64> {
         let output = Command::new("free")
-            .args(&["-m"])
+            .args(["-m"])
             .output()
             .await
             .map_err(|e| crate::error::AutoInstallError::SystemError(
@@ -72,7 +80,7 @@ impl SystemUtils {
         // Note: This function could be enhanced to use CoreUtils::df()
         // for more reliable cross-platform behavior
         let output = Command::new("df")
-            .args(&["-BG", path])
+            .args(["-BG", path])
             .output()
             .await
             .map_err(|e| crate::error::AutoInstallError::SystemError(
@@ -121,7 +129,8 @@ impl SystemUtils {
             warn!("qemu-system-aarch64 not found - ARM64 support will be limited");
         }
 
-        // Check for KVM support
+        // Check for KVM support (Unix only)
+        #[cfg(unix)]
         if !std::path::Path::new("/dev/kvm").exists() {
             warn!("KVM acceleration not available - VM operations will be slower");
         }
@@ -133,7 +142,7 @@ impl SystemUtils {
     pub async fn verify_luks_support() -> Result<bool> {
         // Test cryptsetup is available and functional
         let output = Command::new("cryptsetup")
-            .args(&["--version"])
+            .args(["--version"])
             .output()
             .await
             .map_err(|_| crate::error::AutoInstallError::SystemError(
@@ -148,7 +157,7 @@ impl SystemUtils {
         let temp_dir = tempfile::Builder::new()
             .prefix(prefix)
             .tempdir()
-            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+            .map_err(crate::error::AutoInstallError::IoError)?;
 
         let path = temp_dir.path().to_owned();
         std::mem::forget(temp_dir); // Don't delete on drop

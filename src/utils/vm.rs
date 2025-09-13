@@ -1,5 +1,5 @@
 // file: src/utils/vm.rs
-// version: 1.0.0
+// version: 1.1.2
 // guid: y5z6a7b8-c9d0-1234-5678-901234yzabcd
 
 //! VM management utilities
@@ -103,7 +103,7 @@ impl VmManager {
                         info!("  {}", file_name);
 
                         // If this is a directory, also list its contents
-                        if entry.file_type().await.unwrap_or_else(|_| std::fs::FileType::from(std::fs::File::open("/dev/null").unwrap().metadata().unwrap().file_type())).is_dir() {
+                        if entry.file_type().await.unwrap_or_else(|_| std::fs::File::open("/dev/null").unwrap().metadata().unwrap().file_type()).is_dir() {
                             let subdir_path = netboot_dir.join(&file_name);
                             if let Ok(mut subentries) = tokio::fs::read_dir(&subdir_path).await {
                                 info!("    Contents of {}:", file_name);
@@ -130,7 +130,7 @@ impl VmManager {
 
         // Build QEMU command with direct kernel boot (no UEFI needed for netboot)
         let mut cmd = Command::new(qemu_cmd);
-        cmd.args(&[
+        cmd.args([
             "-machine", "accel=kvm:tcg", // Use KVM if available, fallback to TCG
             "-cpu", "host",
             "-m", &format!("{}M", vm_memory_mb),
@@ -151,10 +151,10 @@ impl VmManager {
         // Add architecture-specific arguments
         match architecture {
             Architecture::Amd64 => {
-                cmd.args(&["-machine", "q35"]);
+                cmd.args(["-machine", "q35"]);
             }
             Architecture::Arm64 => {
-                cmd.args(&[
+                cmd.args([
                     "-machine", "virt",
                     "-bios", "/usr/share/qemu-efi-aarch64/QEMU_EFI.fd",
                 ]);
@@ -289,10 +289,12 @@ impl VmManager {
 
     /// Send command to QEMU monitor
     async fn send_monitor_command(&self, command: &str) -> Result<()> {
-        use tokio::io::AsyncWriteExt;
-        use tokio::net::UnixStream;
+    use tokio::io::AsyncWriteExt;
+    #[cfg(unix)]
+    use tokio::net::UnixStream;
 
         // Connect to QEMU monitor socket
+        #[cfg(unix)]
         match UnixStream::connect("/tmp/qemu-monitor.sock").await {
             Ok(mut stream) => {
                 let cmd_with_newline = format!("{}\n", command);
@@ -307,6 +309,14 @@ impl VmManager {
                 debug!("Monitor socket not available: {}", e);
                 Ok(()) // Non-fatal, continue
             }
+        }
+
+        #[cfg(not(unix))]
+        {
+            // QEMU monitor Unix socket is not available on non-Unix targets
+            let _ = command; // suppress unused variable warning
+            debug!("QEMU monitor not supported on non-Unix platforms");
+            Ok(())
         }
     }
 
@@ -331,7 +341,7 @@ impl VmManager {
 
         // Find and kill QEMU process
         let output = Command::new("pkill")
-            .args(&["-f", "qemu-system"])
+            .args(["-f", "qemu-system"])
             .output()
             .await;
 
@@ -353,7 +363,7 @@ impl VmManager {
         debug!("Creating cloud-init ISO: {}", iso_path.display());
 
         let output = Command::new("genisoimage")
-            .args(&[
+            .args([
                 "-output", iso_path.to_str().unwrap(),
                 "-volid", "cidata",
                 "-joliet",
@@ -388,12 +398,12 @@ impl VmManager {
 
         // Create a temporary test disk
         let temp_dir = tempfile::tempdir()
-            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+            .map_err(crate::error::AutoInstallError::IoError)?;
         let test_disk = temp_dir.path().join("test.qcow2");
 
         // Create test disk
         let output = Command::new("qemu-img")
-            .args(&[
+            .args([
                 "create",
                 "-f", "qcow2",
                 test_disk.to_str().unwrap(),
@@ -413,7 +423,7 @@ impl VmManager {
 
         // Test QEMU startup (without actually booting)
         let mut cmd = Command::new(qemu_cmd);
-        cmd.args(&[
+        cmd.args([
             "-machine", "accel=kvm:tcg",
             "-m", "512M",
             "-drive", &format!("file={},format=qcow2,if=virtio", test_disk.display()),
@@ -426,10 +436,10 @@ impl VmManager {
         // Add architecture-specific arguments
         match architecture {
             Architecture::Amd64 => {
-                cmd.args(&["-machine", "q35"]);
+                cmd.args(["-machine", "q35"]);
             }
             Architecture::Arm64 => {
-                cmd.args(&["-machine", "virt"]);
+                cmd.args(["-machine", "virt"]);
             }
         }
 
@@ -453,24 +463,33 @@ impl VmManager {
 
     /// Check if KVM acceleration is available
     pub async fn check_kvm_support(&self) -> bool {
-        use std::os::unix::fs::MetadataExt;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
 
-        Path::new("/dev/kvm").exists() &&
-        tokio::fs::metadata("/dev/kvm").await
-            .map(|m| {
-                // Check if it's a character device (mode & S_IFMT == S_IFCHR)
-                (m.mode() & 0o170000) == 0o020000
-            })
-            .unwrap_or(false)
+            Path::new("/dev/kvm").exists() &&
+            tokio::fs::metadata("/dev/kvm").await
+                .map(|m| {
+                    // Check if it's a character device (mode & S_IFMT == S_IFCHR)
+                    (m.mode() & 0o170000) == 0o020000
+                })
+                .unwrap_or(false)
+        }
+
+        #[cfg(not(unix))]
+        {
+            // No /dev/kvm on non-Unix platforms
+            false
+        }
     }
 
     /// Get recommended VM configuration based on system resources
     pub async fn get_recommended_vm_config(&self) -> Result<VmConfig> {
-        let available_memory = crate::utils::system::SystemUtils::get_available_memory().await?;
+    let available_memory = crate::utils::system::SystemUtils::get_available_memory().await?;
         let available_space = crate::utils::system::SystemUtils::get_available_space("/tmp").await?;
 
         // Use 50% of available memory, but at least 1GB and at most 8GB
-        let memory_mb = std::cmp::max(1024, std::cmp::min(8192, available_memory as u32 / 2));
+    let memory_mb = (available_memory as u32 / 2).clamp(1024, 8192);
 
         // Use 20GB disk space or 50% of available space, whichever is smaller
         let disk_size_gb = std::cmp::min(20, available_space as u32 / 2);

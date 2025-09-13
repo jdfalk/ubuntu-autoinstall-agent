@@ -1,9 +1,9 @@
 // file: src/utils/coreutils.rs
-// version: 1.0.0
+// version: 1.0.1
 // guid: a8b9c0d1-e2f3-4567-8901-234567890abc
 
 //! Cross-platform coreutils integration
-//! 
+//!
 //! This module provides utilities to use uutils/coreutils implementations
 //! when available, falling back to system commands when not available.
 //! See: https://github.com/uutils/coreutils
@@ -36,7 +36,7 @@ impl CoreUtils {
     pub async fn df<P: AsRef<Path>>(path: P) -> Result<String> {
         let cmd = Self::get_command("df").await;
         let output = Command::new(&cmd)
-            .args(&["-BG", path.as_ref().to_str().unwrap()])
+            .args(["-BG", path.as_ref().to_str().unwrap()])
             .output()
             .await
             .map_err(|e| crate::error::AutoInstallError::SystemError(
@@ -57,7 +57,7 @@ impl CoreUtils {
     pub async fn ls<P: AsRef<Path>>(path: P) -> Result<String> {
         let cmd = Self::get_command("ls").await;
         let output = Command::new(&cmd)
-            .args(&["-la", path.as_ref().to_str().unwrap()])
+            .args(["-la", path.as_ref().to_str().unwrap()])
             .output()
             .await
             .map_err(|e| crate::error::AutoInstallError::SystemError(
@@ -99,7 +99,7 @@ impl CoreUtils {
     pub async fn cp<P: AsRef<Path>, Q: AsRef<Path>>(src: P, dst: Q) -> Result<()> {
         let cmd = Self::get_command("cp").await;
         let output = Command::new(&cmd)
-            .args(&[
+            .args([
                 src.as_ref().to_str().unwrap(),
                 dst.as_ref().to_str().unwrap(),
             ])
@@ -123,11 +123,11 @@ impl CoreUtils {
     pub async fn mkdir<P: AsRef<Path>>(path: P, parents: bool) -> Result<()> {
         let cmd = Self::get_command("mkdir").await;
         let mut command = Command::new(&cmd);
-        
+
         if parents {
             command.arg("-p");
         }
-        
+
         let output = command
             .arg(path.as_ref().to_str().unwrap())
             .output()
@@ -150,15 +150,15 @@ impl CoreUtils {
     pub async fn rm<P: AsRef<Path>>(path: P, recursive: bool, force: bool) -> Result<()> {
         let cmd = Self::get_command("rm").await;
         let mut command = Command::new(&cmd);
-        
+
         if recursive {
             command.arg("-r");
         }
-        
+
         if force {
             command.arg("-f");
         }
-        
+
         let output = command
             .arg(path.as_ref().to_str().unwrap())
             .output()
@@ -209,7 +209,7 @@ mod tests {
         // Test that we get some command back (either uutils or system)
         let cmd = CoreUtils::get_command("ls").await;
         assert!(!cmd.is_empty());
-        
+
         // Should be either "ls" or "uu_ls"
         assert!(cmd == "ls" || cmd == "uu_ls");
     }
@@ -218,7 +218,7 @@ mod tests {
     async fn test_check_uutils_availability() {
         let result = CoreUtils::check_uutils_availability().await;
         assert!(result.is_ok());
-        
+
         let _available = result.unwrap();
         // Should return a list (might be empty if no uutils installed)
         // This just verifies the function doesn't panic
@@ -229,7 +229,7 @@ mod tests {
         // Test ls on a directory that should exist
         let temp_dir = TempDir::new().unwrap();
         let result = CoreUtils::ls(temp_dir.path()).await;
-        
+
         // Should succeed (either with uutils or system ls)
         assert!(result.is_ok());
     }

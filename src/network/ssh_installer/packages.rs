@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/packages.rs
-// version: 1.0.0
+// version: 1.0.1
 // guid: sshpkg01-2345-6789-abcd-ef0123456789
 
 //! Package management for SSH installation
@@ -28,7 +28,7 @@ impl<'a> PackageManager<'a> {
         self.ssh.execute("DEBIAN_FRONTEND=noninteractive apt-get install -y zfsutils-linux").await?;
 
         // Install other required packages
-        let packages = vec![
+        let packages = [
             "cryptsetup", "parted", "gdisk", "debootstrap",
             "dosfstools", "xfsprogs", "util-linux"
         ];

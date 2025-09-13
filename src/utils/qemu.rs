@@ -1,5 +1,5 @@
 // file: src/utils/qemu.rs
-// version: 1.0.0
+// version: 1.0.2
 // guid: h9i0j1k2-l3m4-5678-9012-345678hijklm
 
 //! QEMU image utilities
@@ -16,7 +16,7 @@ impl QemuUtils {
     /// Get image information using qemu-img info
     pub async fn get_image_info<P: AsRef<Path>>(image_path: P) -> Result<ImageInfo> {
         let output = Command::new("qemu-img")
-            .args(&["info", "--output=json", image_path.as_ref().to_str().unwrap()])
+            .args(["info", "--output=json", image_path.as_ref().to_str().unwrap()])
             .output()
             .await
             .map_err(|e| crate::error::AutoInstallError::ImageError(
@@ -52,7 +52,7 @@ impl QemuUtils {
         info!("Converting QCOW2 image to raw format for extraction");
 
         let output = Command::new("qemu-img")
-            .args(&[
+            .args([
                 "convert",
                 "-f", "qcow2",
                 "-O", "raw",
@@ -82,7 +82,7 @@ impl QemuUtils {
     ) -> Result<String> {
         // Create loop device
         let output = Command::new("losetup")
-            .args(&["-P", "-f", "--show", raw_path.as_ref().to_str().unwrap()])
+            .args(["-P", "-f", "--show", raw_path.as_ref().to_str().unwrap()])
             .output()
             .await
             .map_err(|e| crate::error::AutoInstallError::ImageError(
@@ -100,7 +100,7 @@ impl QemuUtils {
         // Mount the filesystem (usually partition 1)
         let partition = format!("{}p1", loop_device);
         let output = Command::new("mount")
-            .args(&[&partition, mount_point.as_ref().to_str().unwrap()])
+            .args([&partition, mount_point.as_ref().to_str().unwrap()])
             .output()
             .await
             .map_err(|e| crate::error::AutoInstallError::ImageError(
@@ -109,7 +109,7 @@ impl QemuUtils {
 
         if !output.status.success() {
             // Clean up loop device on mount failure
-            let _ = Command::new("losetup").args(&["-d", &loop_device]).output().await;
+            let _ = Command::new("losetup").args(["-d", &loop_device]).output().await;
             return Err(crate::error::AutoInstallError::ImageError(
                 format!("Mount failed: {}", String::from_utf8_lossy(&output.stderr))
             ));
@@ -126,7 +126,7 @@ impl QemuUtils {
     ) -> Result<()> {
         // Unmount
         let output = Command::new("umount")
-            .args(&[mount_point.as_ref().to_str().unwrap()])
+            .args([mount_point.as_ref().to_str().unwrap()])
             .output()
             .await
             .map_err(|e| crate::error::AutoInstallError::ImageError(
@@ -141,7 +141,7 @@ impl QemuUtils {
 
         // Remove loop device
         let output = Command::new("losetup")
-            .args(&["-d", loop_device])
+            .args(["-d", loop_device])
             .output()
             .await
             .map_err(|e| crate::error::AutoInstallError::ImageError(
@@ -164,13 +164,13 @@ impl QemuUtils {
         target_dir: P,
     ) -> Result<()> {
         let temp_dir = tempfile::tempdir()
-            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+            .map_err(crate::error::AutoInstallError::IoError)?;
 
         let raw_path = temp_dir.path().join("image.raw");
         let mount_point = temp_dir.path().join("mount");
 
         tokio::fs::create_dir_all(&mount_point).await
-            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+            .map_err(crate::error::AutoInstallError::IoError)?;
 
         // Convert to raw
         Self::convert_to_raw(qcow2_path.as_ref(), &raw_path).await?;
@@ -180,7 +180,7 @@ impl QemuUtils {
 
         // Copy contents
         let output = Command::new("rsync")
-            .args(&[
+            .args([
                 "-av",
                 "--numeric-ids",
                 &format!("{}/", mount_point.display()),

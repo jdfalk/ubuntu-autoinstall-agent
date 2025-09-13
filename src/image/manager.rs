@@ -1,5 +1,5 @@
 // file: src/image/manager.rs
-// version: 1.0.0
+// version: 1.0.1
 // guid: n4o5p6q7-r8s9-0123-4567-890123nopqrs
 
 //! Image lifecycle management
@@ -38,11 +38,11 @@ impl ImageManager {
 
         let mut images = Vec::new();
         let mut dir = fs::read_dir(&self.images_dir).await
-            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+            .map_err(crate::error::AutoInstallError::IoError)?;
 
         while let Some(entry) = dir.next_entry().await
-            .map_err(|e| crate::error::AutoInstallError::IoError(e))? {
-            
+            .map_err(crate::error::AutoInstallError::IoError)? {
+
             if let Some(name) = entry.file_name().to_str() {
                 if name.ends_with(".json") {
                     if let Ok(image_info) = self.load_image_info(&entry.path()).await {
@@ -77,7 +77,7 @@ impl ImageManager {
     /// Validate image integrity
     pub async fn validate_image<P: AsRef<Path>>(&self, image_path: P) -> Result<bool> {
         let path = image_path.as_ref();
-        
+
         // Check if file exists
         if !path.exists() {
             warn!("Image file does not exist: {}", path.display());
@@ -86,8 +86,8 @@ impl ImageManager {
 
         // Check file size
         let metadata = fs::metadata(path).await
-            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
-        
+            .map_err(crate::error::AutoInstallError::IoError)?;
+
         if metadata.len() == 0 {
             warn!("Image file is empty: {}", path.display());
             return Ok(false);
@@ -95,7 +95,7 @@ impl ImageManager {
 
         // Validate QEMU image format
         let output = tokio::process::Command::new("qemu-img")
-            .args(&["info", path.to_str().unwrap()])
+            .args(["info", path.to_str().unwrap()])
             .output()
             .await
             .map_err(|e| crate::error::AutoInstallError::ImageError(
@@ -124,9 +124,9 @@ impl ImageManager {
 
         let info_path = self.images_dir.join(format!("{}.json", image_info.id));
         let json_data = serde_json::to_string_pretty(&image_info)?;
-        
+
         fs::write(&info_path, json_data).await
-            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+            .map_err(crate::error::AutoInstallError::IoError)?;
 
         info!("Registered image: {} ({})", image_info.id, image_info.ubuntu_version);
         Ok(())
@@ -135,18 +135,18 @@ impl ImageManager {
     /// Remove image and its metadata
     pub async fn remove_image(&self, image_id: &str) -> Result<()> {
         let info_path = self.images_dir.join(format!("{}.json", image_id));
-        
+
         if let Ok(image_info) = self.load_image_info(&info_path).await {
             // Remove image file
             if image_info.path.exists() {
                 fs::remove_file(&image_info.path).await
-                    .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+                    .map_err(crate::error::AutoInstallError::IoError)?;
                 debug!("Removed image file: {}", image_info.path.display());
             }
 
             // Remove metadata file
             fs::remove_file(&info_path).await
-                .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+                .map_err(crate::error::AutoInstallError::IoError)?;
             debug!("Removed image metadata: {}", info_path.display());
 
             info!("Removed image: {}", image_id);
@@ -180,7 +180,7 @@ impl ImageManager {
     /// Get image by ID
     pub async fn get_image(&self, image_id: &str) -> Result<Option<ImageInfo>> {
         let info_path = self.images_dir.join(format!("{}.json", image_id));
-        
+
         if info_path.exists() {
             Ok(Some(self.load_image_info(&info_path).await?))
         } else {
@@ -191,8 +191,8 @@ impl ImageManager {
     /// Load image info from JSON file
     async fn load_image_info<P: AsRef<Path>>(&self, path: P) -> Result<ImageInfo> {
         let content = fs::read_to_string(path).await
-            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
-        
+            .map_err(crate::error::AutoInstallError::IoError)?;
+
         let image_info: ImageInfo = serde_json::from_str(&content)
             .map_err(|e| crate::error::AutoInstallError::ImageError(
                 format!("Failed to parse image metadata: {}", e)
@@ -205,7 +205,7 @@ impl ImageManager {
     async fn ensure_images_dir(&self) -> Result<()> {
         if !self.images_dir.exists() {
             fs::create_dir_all(&self.images_dir).await
-                .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+                .map_err(crate::error::AutoInstallError::IoError)?;
             debug!("Created images directory: {}", self.images_dir.display());
         }
         Ok(())
@@ -217,15 +217,15 @@ impl ImageManager {
         use tokio::io::AsyncReadExt;
 
         let mut file = fs::File::open(path).await
-            .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
+            .map_err(crate::error::AutoInstallError::IoError)?;
 
         let mut hasher = Sha256::new();
         let mut buffer = [0u8; 8192];
 
         loop {
             let bytes_read = file.read(&mut buffer).await
-                .map_err(|e| crate::error::AutoInstallError::IoError(e))?;
-            
+                .map_err(crate::error::AutoInstallError::IoError)?;
+
             if bytes_read == 0 {
                 break;
             }
@@ -253,7 +253,7 @@ mod tests {
     async fn test_image_manager_creation() {
         let temp_dir = TempDir::new().unwrap();
         let manager = ImageManager::with_images_dir(temp_dir.path());
-        
+
         let images = manager.list_images(None).await.unwrap();
         assert_eq!(images.len(), 0);
     }
@@ -272,7 +272,7 @@ mod tests {
         );
 
         manager.register_image(image_info.clone()).await?;
-        
+
         let images = manager.list_images(None).await?;
         assert_eq!(images.len(), 1);
         assert_eq!(images[0].ubuntu_version, "24.04");

@@ -1,5 +1,5 @@
 // file: src/utils/disk.rs
-// version: 1.0.0
+// version: 1.0.1
 // guid: x4y5z6a7-b8c9-0123-4567-890123xyzabc
 
 //! Disk utility functions
@@ -21,7 +21,7 @@ impl DiskUtils {
     /// Get disk size in GB
     pub async fn get_disk_size(device: &str) -> Result<u64> {
         let output = Command::new("lsblk")
-            .args(&["-bno", "SIZE", device])
+            .args(["-bno", "SIZE", device])
             .output()
             .await
             .map_err(|e| crate::error::AutoInstallError::DiskError(
@@ -46,7 +46,7 @@ impl DiskUtils {
     /// Check if device is mounted
     pub async fn is_mounted(device: &str) -> Result<bool> {
         let output = Command::new("findmnt")
-            .args(&["-S", device])
+            .args(["-S", device])
             .output()
             .await
             .map_err(|e| crate::error::AutoInstallError::DiskError(
@@ -60,7 +60,7 @@ impl DiskUtils {
     pub async fn unmount_device(device: &str) -> Result<()> {
         if Self::is_mounted(device).await? {
             debug!("Unmounting device: {}", device);
-            
+
             let output = Command::new("umount")
                 .arg(device)
                 .output()
@@ -86,7 +86,7 @@ impl DiskUtils {
 
         // Use wipefs to remove filesystem signatures
         let output = Command::new("wipefs")
-            .args(&["-af", device])
+            .args(["-af", device])
             .output()
             .await
             .map_err(|e| crate::error::AutoInstallError::DiskError(
@@ -109,7 +109,7 @@ impl DiskUtils {
         debug!("Creating {} partition table on {}", table_type, device);
 
         let output = Command::new("parted")
-            .args(&["-s", device, "mklabel", table_type])
+            .args(["-s", device, "mklabel", table_type])
             .output()
             .await
             .map_err(|e| crate::error::AutoInstallError::DiskError(
@@ -129,16 +129,16 @@ impl DiskUtils {
 
     /// Create partition on device
     pub async fn create_partition(
-        device: &str, 
-        start: &str, 
-        end: &str, 
+        device: &str,
+        start: &str,
+        end: &str,
         fs_type: &str
     ) -> Result<String> {
-        debug!("Creating partition on {} from {} to {} with filesystem {}", 
+        debug!("Creating partition on {} from {} to {} with filesystem {}",
                device, start, end, fs_type);
 
         let output = Command::new("parted")
-            .args(&["-s", device, "mkpart", "primary", fs_type, start, end])
+            .args(["-s", device, "mkpart", "primary", fs_type, start, end])
             .output()
             .await
             .map_err(|e| crate::error::AutoInstallError::DiskError(
@@ -154,7 +154,7 @@ impl DiskUtils {
 
         // Get the new partition device name
         let partition_device = format!("{}1", device);
-        
+
         debug!("Partition created successfully: {}", partition_device);
         Ok(partition_device)
     }
@@ -174,7 +174,7 @@ impl DiskUtils {
         };
 
         let output = Command::new(mkfs_cmd)
-            .args(&["-F", device])
+            .args(["-F", device])
             .output()
             .await
             .map_err(|e| crate::error::AutoInstallError::DiskError(
@@ -195,7 +195,7 @@ impl DiskUtils {
     /// Get disk information
     pub async fn get_disk_info(device: &str) -> Result<DiskInfo> {
         let output = Command::new("lsblk")
-            .args(&["-bJo", "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE", device])
+            .args(["-bJo", "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE", device])
             .output()
             .await
             .map_err(|e| crate::error::AutoInstallError::DiskError(
@@ -226,7 +226,7 @@ impl DiskUtils {
         }
 
         let device_info = &blockdevices[0];
-        
+
         Ok(DiskInfo {
             name: device_info["name"].as_str().unwrap_or("unknown").to_string(),
             size_bytes: device_info["size"].as_str()
@@ -278,7 +278,7 @@ mod tests {
     async fn test_device_exists() {
         // Test with a device that should exist
         assert!(DiskUtils::device_exists("/dev/null").await);
-        
+
         // Test with a device that shouldn't exist
         assert!(!DiskUtils::device_exists("/dev/nonexistent123").await);
     }
