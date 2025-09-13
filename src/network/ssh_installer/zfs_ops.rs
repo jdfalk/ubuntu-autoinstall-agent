@@ -5,7 +5,7 @@
 //! ZFS operations for SSH installation
 
 use std::collections::HashMap;
-use tracing::info;
+use tracing::{info, error};
 use crate::network::SshClient;
 use crate::Result;
 use super::config::InstallationConfig;
@@ -55,8 +55,7 @@ impl<'a> ZfsManager<'a> {
         self.log_and_execute("Mounting LUKS", "mount /dev/mapper/luks /mnt/luks").await?;
         self.log_and_execute("Generating ZFS key", "dd if=/dev/random of=/mnt/luks/zfs.key bs=32 count=1").await?;
         self.log_and_execute("Setting ZFS key permissions", "chmod 600 /mnt/luks/zfs.key").await?;
-        self.log_and_execute("Unmounting LUKS", "umount /mnt/luks").await?;
-        self.log_and_execute("Closing LUKS", "cryptsetup close luks").await?;
+        // Don't unmount or close LUKS yet - we need it for rpool creation
         self.log_and_execute("Creating target directory", "mkdir -p /mnt/targetos").await?;
 
         Ok(())
@@ -94,6 +93,10 @@ impl<'a> ZfsManager<'a> {
     /// Create rpool (root pool) with encryption
     async fn create_rpool(&mut self, config: &InstallationConfig) -> Result<()> {
         info!("Creating rpool with encryption");
+
+        // LUKS device should already be open from prepare_zfs_key_storage
+        // Just ensure the mount point exists and is mounted
+        self.log_and_execute("Ensuring LUKS is mounted", "mount /dev/mapper/luks /mnt/luks 2>/dev/null || true").await?;
 
         let rpool_cmd = format!(
             "zpool create -o ashift=12 -o autotrim=on \
@@ -171,9 +174,42 @@ impl<'a> ZfsManager<'a> {
         Ok(())
     }
 
-    /// Helper method to log and execute commands
+    /// Helper method to log and execute commands with better error handling
     async fn log_and_execute(&mut self, description: &str, command: &str) -> Result<()> {
         info!("Executing: {} -> {}", description, command);
-        self.ssh.execute(command).await
+
+        match self.ssh.execute_with_error_collection(command, description).await {
+            Ok((exit_code, stdout, stderr)) => {
+                if exit_code == 0 {
+                    if !stdout.is_empty() {
+                        info!("Command output: {}", stdout.trim());
+                    }
+                    Ok(())
+                } else {
+                    error!("Command '{}' failed with exit code {}", description, exit_code);
+                    error!("STDOUT: {}", stdout);
+                    error!("STDERR: {}", stderr);
+
+                    // Don't immediately fail - collect debug info
+                    if let Ok(debug_info) = self.ssh.collect_debug_info().await {
+                        error!("System debug information:\n{}", debug_info);
+                    }
+
+                    Err(crate::error::AutoInstallError::SshError(
+                        format!("Command '{}' failed with exit code {}: stderr={}", description, exit_code, stderr)
+                    ))
+                }
+            }
+            Err(e) => {
+                error!("Failed to execute command '{}': {}", description, e);
+
+                // Try to collect debug info even if the command completely failed
+                if let Ok(debug_info) = self.ssh.collect_debug_info().await {
+                    error!("System debug information:\n{}", debug_info);
+                }
+
+                Err(e)
+            }
+        }
     }
 }

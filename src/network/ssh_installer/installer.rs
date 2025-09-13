@@ -5,7 +5,7 @@
 //! Main SSH installer orchestrating all installation phases
 
 use std::collections::HashMap;
-use tracing::info;
+use tracing::{info, error};
 use crate::network::SshClient;
 use crate::Result;
 use super::config::{InstallationConfig, SystemInfo};
@@ -52,7 +52,7 @@ impl SshInstaller {
         investigator.investigate_system().await
     }
 
-    /// Perform full ZFS + LUKS installation
+    /// Perform full ZFS + LUKS installation with comprehensive error handling
     pub async fn perform_installation(&mut self, config: &InstallationConfig) -> Result<()> {
         if !self.connected {
             return Err(crate::error::AutoInstallError::SshError(
@@ -62,29 +62,171 @@ impl SshInstaller {
 
         info!("Starting full ZFS + LUKS installation for {}", config.hostname);
 
-        // Setup installation variables
-        self.setup_installation_variables(config).await?;
+        let mut failed_phases = Vec::new();
+        let mut successful_phases = Vec::new();
 
-        // Phase 1: Package installation
-        self.phase_1_package_installation().await?;
+        // Phase 0: Setup installation variables
+        match self.setup_installation_variables(config).await {
+            Ok(_) => {
+                info!("✓ Phase 0 completed: Setup variables");
+                successful_phases.push("Phase 0: Setup variables");
+            }
+            Err(e) => {
+                error!("✗ Phase 0 failed - Setup variables: {}", e);
+                failed_phases.push(format!("Phase 0: Setup variables - {}", e));
+                self.collect_and_log_debug_info().await;
+            }
+        }
+
+        // Phase 1: Package installation (continue even if previous phase failed)
+        match self.phase_1_package_installation().await {
+            Ok(_) => {
+                info!("✓ Phase 1 completed: Package installation");
+                successful_phases.push("Phase 1: Package installation");
+            }
+            Err(e) => {
+                error!("✗ Phase 1 failed - Package installation: {}", e);
+                failed_phases.push(format!("Phase 1: Package installation - {}", e));
+                self.collect_and_log_debug_info().await;
+            }
+        }
 
         // Phase 2: Disk preparation
-        self.phase_2_disk_preparation(config).await?;
+        match self.phase_2_disk_preparation(config).await {
+            Ok(_) => {
+                info!("✓ Phase 2 completed: Disk preparation");
+                successful_phases.push("Phase 2: Disk preparation");
+            }
+            Err(e) => {
+                error!("✗ Phase 2 failed - Disk preparation: {}", e);
+                failed_phases.push(format!("Phase 2: Disk preparation - {}", e));
+                self.collect_and_log_debug_info().await;
+            }
+        }
 
         // Phase 3: ZFS pool creation
-        self.phase_3_zfs_creation(config).await?;
+        match self.phase_3_zfs_creation(config).await {
+            Ok(_) => {
+                info!("✓ Phase 3 completed: ZFS creation");
+                successful_phases.push("Phase 3: ZFS creation");
+            }
+            Err(e) => {
+                error!("✗ Phase 3 failed - ZFS creation: {}", e);
+                failed_phases.push(format!("Phase 3: ZFS creation - {}", e));
+                self.collect_and_log_debug_info().await;
+                // Continue to next phases for complete error analysis
+            }
+        }
 
         // Phase 4: Base system installation
-        self.phase_4_base_system(config).await?;
+        match self.phase_4_base_system(config).await {
+            Ok(_) => {
+                info!("✓ Phase 4 completed: Base system");
+                successful_phases.push("Phase 4: Base system");
+            }
+            Err(e) => {
+                error!("✗ Phase 4 failed - Base system: {}", e);
+                failed_phases.push(format!("Phase 4: Base system - {}", e));
+                self.collect_and_log_debug_info().await;
+            }
+        }
 
         // Phase 5: System configuration
-        self.phase_5_system_configuration(config).await?;
+        match self.phase_5_system_configuration(config).await {
+            Ok(_) => {
+                info!("✓ Phase 5 completed: System configuration");
+                successful_phases.push("Phase 5: System configuration");
+            }
+            Err(e) => {
+                error!("✗ Phase 5 failed - System configuration: {}", e);
+                failed_phases.push(format!("Phase 5: System configuration - {}", e));
+                self.collect_and_log_debug_info().await;
+            }
+        }
 
         // Phase 6: Final setup
-        self.phase_6_final_setup(config).await?;
+        match self.phase_6_final_setup(config).await {
+            Ok(_) => {
+                info!("✓ Phase 6 completed: Final setup");
+                successful_phases.push("Phase 6: Final setup");
+            }
+            Err(e) => {
+                error!("✗ Phase 6 failed - Final setup: {}", e);
+                failed_phases.push(format!("Phase 6: Final setup - {}", e));
+                self.collect_and_log_debug_info().await;
+            }
+        }
 
-        info!("Installation completed successfully for {}", config.hostname);
-        Ok(())
+        // Generate comprehensive installation report
+        self.generate_installation_report(&successful_phases, &failed_phases).await;
+
+        if failed_phases.is_empty() {
+            info!("🎉 Installation completed successfully for {}", config.hostname);
+            Ok(())
+        } else {
+            error!("❌ Installation completed with {} failed phases out of 6 total phases", failed_phases.len());
+            error!("💡 SSH session remains active for manual debugging and investigation");
+            error!("💡 You can inspect logs, retry specific phases, or analyze the system state");
+
+            // Don't disconnect - let the user investigate
+            Err(crate::error::AutoInstallError::InstallationError(
+                format!("Installation failed: {} phases failed", failed_phases.len())
+            ))
+        }
+    }
+
+    /// Collect and log debug information
+    async fn collect_and_log_debug_info(&mut self) {
+        info!("Collecting debug information for troubleshooting...");
+        match self.ssh.collect_debug_info().await {
+            Ok(debug_info) => {
+                error!("=== DEBUG INFORMATION ===");
+                error!("{}", debug_info);
+                error!("=== END DEBUG INFORMATION ===");
+            }
+            Err(e) => {
+                error!("Failed to collect debug information: {}", e);
+            }
+        }
+    }
+
+    /// Generate comprehensive installation report
+    async fn generate_installation_report(&mut self, successful_phases: &[&str], failed_phases: &[String]) {
+        info!("=== INSTALLATION REPORT ===");
+        info!("Total phases: 6");
+        info!("Successful phases: {}", successful_phases.len());
+        info!("Failed phases: {}", failed_phases.len());
+
+        if !successful_phases.is_empty() {
+            info!("✓ SUCCESSFUL PHASES:");
+            for phase in successful_phases {
+                info!("  ✓ {}", phase);
+            }
+        }
+
+        if !failed_phases.is_empty() {
+            error!("✗ FAILED PHASES:");
+            for phase in failed_phases {
+                error!("  ✗ {}", phase);
+            }
+
+            error!("📋 DEBUGGING GUIDE:");
+            error!("  • SSH session is still active - you can manually inspect the system");
+            error!("  • Check /var/log/syslog for system messages");
+            error!("  • Run 'dmesg' for kernel messages");
+            error!("  • Check 'zpool status' for ZFS pool information");
+            error!("  • Check 'cryptsetup status luks' for LUKS status");
+            error!("  • Use 'lsblk' to see current disk layout");
+            error!("  • Run 'mount' to see mounted filesystems");
+
+            error!("🔧 COMMON FIXES:");
+            error!("  • For ZFS issues: Check if all required packages are installed");
+            error!("  • For disk issues: Verify the correct disk device path");
+            error!("  • For LUKS issues: Check if cryptsetup is working properly");
+            error!("  • For mount issues: Check if mount points exist and are accessible");
+        }
+
+        info!("=== END INSTALLATION REPORT ===");
     }
 
     /// Setup installation variables

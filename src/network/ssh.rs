@@ -153,8 +153,97 @@ impl SshClient {
             ));
         }
 
-        debug!("Command executed successfully, output length: {}", output.len());
+        debug!("Command executed successfully: {}", output.len());
         Ok(output)
+    }
+
+    /// Execute command with detailed error reporting but don't fail the session
+    pub async fn execute_with_error_collection(&mut self, command: &str, description: &str) -> Result<(i32, String, String)> {
+        info!("Executing: {} -> {}", description, command);
+
+        let session = self.session.as_mut()
+            .ok_or_else(|| crate::error::AutoInstallError::SshError(
+                "No active SSH session".to_string()
+            ))?;
+
+        let mut channel = session.channel_session()
+            .map_err(|e| crate::error::AutoInstallError::SshError(
+                format!("Failed to create SSH channel: {}", e)
+            ))?;
+
+        channel.exec(command)
+            .map_err(|e| crate::error::AutoInstallError::SshError(
+                format!("Failed to execute command: {}", e)
+            ))?;
+
+        let mut stdout = String::new();
+        let mut stderr = String::new();
+
+        // Read stdout
+        channel.read_to_string(&mut stdout)
+            .map_err(|e| crate::error::AutoInstallError::SshError(
+                format!("Failed to read stdout: {}", e)
+            ))?;
+
+        // Read stderr
+        channel.stderr().read_to_string(&mut stderr)
+            .map_err(|e| crate::error::AutoInstallError::SshError(
+                format!("Failed to read stderr: {}", e)
+            ))?;
+
+        channel.wait_close()
+            .map_err(|e| crate::error::AutoInstallError::SshError(
+                format!("Failed to close SSH channel: {}", e)
+            ))?;
+
+        let exit_status = channel.exit_status()
+            .map_err(|e| crate::error::AutoInstallError::SshError(
+                format!("Failed to get exit status: {}", e)
+            ))?;
+
+        if exit_status != 0 {
+            error!("Command '{}' failed with exit code {}", description, exit_status);
+            error!("STDOUT: {}", stdout);
+            error!("STDERR: {}", stderr);
+        } else {
+            info!("Command '{}' completed successfully", description);
+            debug!("STDOUT: {}", stdout);
+        }
+
+        Ok((exit_status, stdout, stderr))
+    }
+
+    /// Collect system information for debugging
+    pub async fn collect_debug_info(&mut self) -> Result<String> {
+        info!("Collecting system debug information");
+
+        let mut debug_info = String::new();
+        debug_info.push_str("=== SYSTEM DEBUG INFORMATION ===\n\n");
+
+        let debug_commands = vec![
+            ("System Info", "uname -a"),
+            ("Disk Status", "lsblk -a"),
+            ("ZFS Pools", "zpool status 2>/dev/null || echo 'No ZFS pools'"),
+            ("ZFS Datasets", "zfs list 2>/dev/null || echo 'No ZFS datasets'"),
+            ("LUKS Status", "cryptsetup status luks 2>/dev/null || echo 'No LUKS devices'"),
+            ("Mount Points", "mount | grep -E '(zfs|luks|mapper)'"),
+            ("Disk Space", "df -h"),
+            ("Memory Usage", "free -h"),
+            ("Recent Logs", "journalctl --no-pager -n 50"),
+            ("Dmesg Errors", "dmesg | tail -20"),
+            ("Process List", "ps aux | head -20"),
+        ];
+
+        for (desc, cmd) in debug_commands {
+            debug_info.push_str(&format!("=== {} ===\n", desc));
+            match self.execute_with_output(cmd).await {
+                Ok(output) => debug_info.push_str(&output),
+                Err(_) => debug_info.push_str("Command failed or not available"),
+            }
+            debug_info.push_str("\n\n");
+        }
+
+        Ok(debug_info)
     }
 
     /// Upload file to remote host

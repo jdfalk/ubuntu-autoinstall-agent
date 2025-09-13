@@ -31,6 +31,9 @@ pub enum AutoInstallError {
     #[error("SSH operation failed: {0}")]
     SshError(String),
 
+    #[error("Installation failed: {0}")]
+    InstallationError(String),
+
     #[error("Validation failed: {0}")]
     ValidationError(String),
 
