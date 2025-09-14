@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/disk_ops.rs
-// version: 1.3.0
+// version: 1.4.0
 // guid: sshdisk1-2345-6789-abcd-ef0123456789
 
 //! Disk operations for SSH installation
@@ -208,5 +208,55 @@ impl<'a> DiskManager<'a> {
     async fn log_and_execute(&mut self, description: &str, command: &str) -> Result<()> {
         info!("Executing: {} -> {}", description, command);
         self.ssh.execute(command).await
+    }
+
+    // --- Test helpers (pure builders) ---
+    #[cfg(test)]
+    fn build_sgdisk_esp(disk: &str) -> String {
+        format!("sgdisk -n 1:2048:+512M -t 1:EF00 -c 1:'EFI System Partition' {}", disk)
+    }
+
+    #[cfg(test)]
+    fn build_sgdisk_reset(disk: &str) -> String {
+        format!("sgdisk -n 2:0:+4G -t 2:8300 -c 2:'RESET' {}", disk)
+    }
+
+    #[cfg(test)]
+    fn build_sgdisk_bpool(disk: &str) -> String {
+        format!("sgdisk -n 3:0:+2G -t 3:BE00 -c 3:'BPOOL' {}", disk)
+    }
+
+    #[cfg(test)]
+    fn build_sgdisk_luks(disk: &str) -> String {
+        format!("sgdisk -n 4:0:0 -t 4:8309 -c 4:'LUKS' {}", disk)
+    }
+
+    #[cfg(test)]
+    fn build_mkfs_esp(disk: &str) -> String {
+        format!("mkfs.vfat -F32 -n ESP {}p1", disk)
+    }
+
+    #[cfg(test)]
+    fn build_mkfs_reset(disk: &str) -> String {
+        format!("mkfs.ext4 -F -L RESET {}p2", disk)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DiskManager;
+
+    #[test]
+    fn test_sgdisk_partition_commands() {
+        assert!(DiskManager::build_sgdisk_esp("/dev/sda").contains("-t 1:EF00"));
+        assert!(DiskManager::build_sgdisk_reset("/dev/sda").contains("-t 2:8300"));
+        assert!(DiskManager::build_sgdisk_bpool("/dev/sda").contains("-t 3:BE00"));
+        assert!(DiskManager::build_sgdisk_luks("/dev/sda").contains("-t 4:8309"));
+    }
+
+    #[test]
+    fn test_format_commands() {
+        assert_eq!(DiskManager::build_mkfs_esp("/dev/nvme0n1"), "mkfs.vfat -F32 -n ESP /dev/nvme0n1p1");
+        assert_eq!(DiskManager::build_mkfs_reset("/dev/nvme0n1"), "mkfs.ext4 -F -L RESET /dev/nvme0n1p2");
     }
 }

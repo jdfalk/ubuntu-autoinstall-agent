@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/system_setup.rs
-// version: 1.14.0
+// version: 1.15.0
 // guid: sshsys01-2345-6789-abcd-ef0123456789
 
 //! System setup and configuration for SSH installation
@@ -26,6 +26,30 @@ impl<'a> SystemConfigurator<'a> {
                 "bash -lc 'lsblk -rP -o PATH,PARTTYPE | grep -i \"PARTTYPE=\\\"{0}\\\"\" | head -n1 | sed -n \"s/.*PATH=\\\"\\([^\\\" ]*\\)\\\".*/\\1/p\"'",
                 guid
             )
+    }
+
+    /// Build Deb822-style Ubuntu apt sources content for the given release
+    fn build_apt_deb822_sources(release: &str) -> String {
+        format!(
+            "Types: deb\nURIs: http://archive.ubuntu.com/ubuntu/\nSuites: {rel}\nComponents: main restricted universe multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n\nTypes: deb\nURIs: http://security.ubuntu.com/ubuntu\nSuites: {rel}-security\nComponents: main restricted universe multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n",
+            rel = release
+        )
+    }
+
+    /// Build a crypttab entry for the LUKS partition using either a UUID or the raw device
+    /// - When `uuid_opt` is Some, use /dev/disk/by-uuid/<uuid>
+    /// - Otherwise, fall back to "{disk}p4"
+    fn build_crypttab_entry(disk_device: &str, uuid_opt: Option<&str>) -> String {
+        let dev = if let Some(uuid) = uuid_opt {
+            if uuid.trim().is_empty() {
+                format!("{}p4", disk_device)
+            } else {
+                format!("/dev/disk/by-uuid/{}", uuid.trim())
+            }
+        } else {
+            format!("{}p4", disk_device)
+        };
+        format!("luks {} none luks,discard,initramfs", dev)
     }
 
     /// Decide which ESP partition path to use based on detection output
@@ -104,10 +128,7 @@ impl<'a> SystemConfigurator<'a> {
 
         // Configure APT Deb822 sources for Ubuntu (archive + security) inside target
         let release = config.debootstrap_release.as_deref().unwrap_or("plucky");
-        let ubuntu_sources = format!(
-            "Types: deb\nURIs: http://archive.ubuntu.com/ubuntu/\nSuites: {rel}\nComponents: main restricted universe multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n\nTypes: deb\nURIs: http://security.ubuntu.com/ubuntu\nSuites: {rel}-security\nComponents: main restricted universe multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n",
-            rel = release
-        );
+        let ubuntu_sources = Self::build_apt_deb822_sources(release);
         self.ssh.execute("mkdir -p /mnt/targetos/etc/apt/sources.list.d").await?;
         self.ssh.execute(&format!(
             "cat > /mnt/targetos/etc/apt/sources.list.d/ubuntu.sources << 'EOF'\n{}\nEOF",
@@ -382,11 +403,10 @@ impl<'a> SystemConfigurator<'a> {
         info!("Configuring LUKS crypttab in chroot");
 
         // Discover partition UUID and write crypttab using by-uuid path with recommended options
-        let part = format!("{}p4", config.disk_device);
-        let uuid_out = self.ssh.execute_with_output(&format!("blkid -s UUID -o value {} 2>/dev/null || true", part)).await?;
-        let uuid = uuid_out.trim();
-        let crypt_device = if uuid.is_empty() { part.clone() } else { format!("/dev/disk/by-uuid/{}", uuid) };
-        let crypttab_entry = format!("luks {} none luks,discard,initramfs", crypt_device);
+    let part = format!("{}p4", config.disk_device);
+    let uuid_out = self.ssh.execute_with_output(&format!("blkid -s UUID -o value {} 2>/dev/null || true", part)).await?;
+    let uuid = uuid_out.trim();
+    let crypttab_entry = Self::build_crypttab_entry(&config.disk_device, if uuid.is_empty() { None } else { Some(uuid) });
         let _ = self.ssh.execute(&format!("[ -d /mnt/targetos/etc ] || mkdir -p /mnt/targetos/etc; echo '{}' > /mnt/targetos/etc/crypttab", crypttab_entry)).await;
 
         // Update initramfs after crypttab changes
@@ -457,5 +477,40 @@ mod tests {
         let detected = "  \n\t"; // whitespace only
         let chosen = SystemConfigurator::choose_esp_partition(detected, "/dev/sda");
         assert_eq!(chosen, "/dev/sdap1");
+    }
+
+    #[test]
+    fn test_choose_esp_partition_handles_newlines_and_spaces() {
+        let detected = "  /dev/nvme1n1p1  \n";
+        let chosen = SystemConfigurator::choose_esp_partition(detected, "/dev/nvme1n1");
+        assert_eq!(chosen, "/dev/nvme1n1p1");
+    }
+
+    #[test]
+    fn test_build_apt_deb822_sources_plucky() {
+        let s = SystemConfigurator::build_apt_deb822_sources("plucky");
+        assert!(s.contains("Types: deb"));
+        assert!(s.contains("URIs: http://archive.ubuntu.com/ubuntu/"));
+        assert!(s.contains("Suites: plucky"));
+        assert!(s.contains("Suites: plucky-security"));
+        assert!(s.contains("Components: main restricted universe multiverse"));
+    }
+
+    #[test]
+    fn test_build_crypttab_entry_with_uuid() {
+        let e = SystemConfigurator::build_crypttab_entry("/dev/nvme0n1", Some("abcd-1234"));
+        assert_eq!(e, "luks /dev/disk/by-uuid/abcd-1234 none luks,discard,initramfs");
+    }
+
+    #[test]
+    fn test_build_crypttab_entry_without_uuid() {
+        let e = SystemConfigurator::build_crypttab_entry("/dev/sda", None);
+        assert_eq!(e, "luks /dev/sdap4 none luks,discard,initramfs");
+    }
+
+    #[test]
+    fn test_build_crypttab_entry_with_empty_uuid() {
+        let e = SystemConfigurator::build_crypttab_entry("/dev/sda", Some("  "));
+        assert_eq!(e, "luks /dev/sdap4 none luks,discard,initramfs");
     }
 }

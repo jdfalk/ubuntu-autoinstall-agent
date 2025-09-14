@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/zfs_ops.rs
-// version: 1.3.2
+// version: 1.4.1
 // guid: sshzfs01-2345-6789-abcd-ef0123456789
 
 //! ZFS operations for SSH installation
@@ -90,13 +90,7 @@ impl<'a> ZfsManager<'a> {
     async fn create_bpool(&mut self, config: &InstallationConfig) -> Result<()> {
         info!("Creating bpool");
 
-        let bpool_cmd = format!(
-            "zpool create -o ashift=12 -o autotrim=on -o cachefile=/etc/zfs/zpool.cache \
-             -o compatibility=grub2 -o feature@livelist=enabled -o feature@zpool_checkpoint=enabled \
-             -O devices=off -O acltype=posixacl -O xattr=sa -O compression=lz4 \
-             -O normalization=formD -O relatime=on -O canmount=off -O mountpoint=none \
-             -m none -R /mnt/targetos bpool {}p3", config.disk_device
-        );
+        let bpool_cmd = Self::build_bpool_create_command(&config.disk_device);
         self.log_and_execute("Creating bpool", &bpool_cmd).await?;
 
         Ok(())
@@ -120,6 +114,18 @@ impl<'a> ZfsManager<'a> {
              -O acltype=posixacl -O xattr=sa -O dnodesize=auto -O compression=lz4 \
              -O normalization=formD -O relatime=on -O canmount=off -O mountpoint=none \
              -m none -R /mnt/targetos rpool /dev/mapper/luks"
+        )
+    }
+
+    /// Build the zpool create command for bpool (grub-compatible)
+    fn build_bpool_create_command(disk: &str) -> String {
+        format!(
+            "zpool create -o ashift=12 -o autotrim=on -o cachefile=/etc/zfs/zpool.cache \
+             -o compatibility=grub2 -o feature@livelist=enabled -o feature@zpool_checkpoint=enabled \
+             -O devices=off -O acltype=posixacl -O xattr=sa -O compression=lz4 \
+             -O normalization=formD -O relatime=on -O canmount=off -O mountpoint=none \
+             -m none -R /mnt/targetos bpool {}p3",
+            disk
         )
     }
 
@@ -243,5 +249,19 @@ mod tests {
         assert!(cmd.contains(" rpool "));
         assert!(cmd.contains("/dev/mapper/luks"));
         assert!(cmd.contains("-R /mnt/targetos"));
+    }
+
+    #[test]
+    fn test_build_bpool_create_command_has_expected_flags() {
+        let cmd = ZfsManager::build_bpool_create_command("/dev/sda");
+        assert!(cmd.contains("zpool create"));
+        // device should be present and appear at the end of the command
+        assert!(cmd.contains(" bpool "));
+        assert!(cmd.ends_with("/dev/sdap3"));
+        assert!(cmd.contains(" -R /mnt/targetos "));
+        assert!(cmd.contains("compatibility=grub2"));
+        assert!(cmd.contains("cachefile=/etc/zfs/zpool.cache"));
+        assert!(cmd.contains("devices=off"));
+        assert!(cmd.contains("compression=lz4"));
     }
 }
