@@ -1,5 +1,5 @@
 // file: src/cli/args.rs
-// version: 1.2.0
+// version: 1.3.0
 // guid: f6g7h8i9-j0k1-2345-6789-012345fghijk
 
 //! Command line argument definitions
@@ -106,6 +106,9 @@ pub enum Commands {
 
         #[arg(long, help = "On failure: do not cleanup/unmount; dump logs and open an interactive shell on the target (keep connection alive)")]
         hold_on_failure: bool,
+
+        #[arg(long, help = "Pause after storage setup (partitioning, formatting, LUKS, ZFS pools/datasets) and print next commands to run manually")]
+        pause_after_storage: bool,
     },
 }
 

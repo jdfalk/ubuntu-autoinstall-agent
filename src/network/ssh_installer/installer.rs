@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/installer.rs
-// version: 1.8.1
+// version: 1.9.0
 // guid: sshins01-2345-6789-abcd-ef0123456789
 
 //! Main SSH installer orchestrating all installation phases
@@ -32,10 +32,12 @@ impl SshInstaller {
         }
     }
 
-    /// Perform installation with additional options (e.g., hold-on-failure)
-    pub async fn perform_installation_with_options(&mut self, config: &InstallationConfig, hold_on_failure: bool) -> Result<()> {
+    /// Perform installation with additional options (e.g., hold-on-failure, pause-after-storage)
+    pub async fn perform_installation_with_options_and_pause(&mut self, config: &InstallationConfig, hold_on_failure: bool, pause_after_storage: bool) -> Result<()> {
         if !hold_on_failure {
-            return self.perform_installation(config).await;
+            if !pause_after_storage {
+                return self.perform_installation(config).await;
+            }
         }
 
         if !self.connected {
@@ -44,7 +46,7 @@ impl SshInstaller {
             ));
         }
 
-        info!("Starting full ZFS + LUKS installation for {} (hold-on-failure enabled)", config.hostname);
+    info!("Starting full ZFS + LUKS installation for {} (hold-on-failure={}, pause-after-storage={})", config.hostname, hold_on_failure, pause_after_storage);
 
         let mut failed_phases: Vec<String> = Vec::new();
         let mut successful_phases: Vec<&str> = Vec::new();
@@ -89,6 +91,12 @@ impl SshInstaller {
             successful_phases.push("Phase 3: ZFS creation");
         }
 
+        // Optional pause after storage creation to allow manual verification and steps
+        if pause_after_storage {
+            self.print_next_commands_after_storage(config).await?;
+            return self.enter_hold_mode("Paused after storage per user request", &successful_phases, &failed_phases).await;
+        }
+
         // Phase 4: Base system installation
         if let Err(e) = self.phase_4_base_system(config).await {
             failed_phases.push(format!("Phase 4: Base system - {}", e));
@@ -116,6 +124,52 @@ impl SshInstaller {
         // All good
         self.generate_installation_report(&successful_phases, &failed_phases).await;
         info!("🎉 Installation completed successfully for {}", config.hostname);
+        Ok(())
+    }
+
+    /// Print the next commands that would be executed post-storage so the user can run them manually
+    async fn print_next_commands_after_storage(&mut self, config: &InstallationConfig) -> Result<()> {
+        use tracing::warn;
+        warn!("=== PAUSE AFTER STORAGE REQUESTED ===");
+        warn!("The installer has completed: partitioning, formatting (ESP/ext4), LUKS setup, and ZFS pools/datasets.");
+        warn!("The next commands that would be executed are listed below. You can run them manually on the target.");
+
+        let esp_part = format!("{}p1", config.disk_device);
+        let cmds = vec![
+            // Mount target root and boot/EFI
+            format!("mkdir -p /mnt/targetos/boot/efi"),
+            format!("mount {} /mnt/targetos/boot/efi", esp_part),
+
+            // Debootstrap base system (plucky), try primary mirror first then old-releases if needed
+            format!("debootstrap {} /mnt/targetos {}", config.debootstrap_release.as_deref().unwrap_or("plucky"), config.debootstrap_mirror.as_deref().unwrap_or("http://archive.ubuntu.com/ubuntu/")),
+            format!("debootstrap {} /mnt/targetos {} # fallback if the above fails", config.debootstrap_release.as_deref().unwrap_or("plucky"), "http://old-releases.ubuntu.com/ubuntu/"),
+
+            // Prepare chroot mounts
+            "mount --rbind /dev /mnt/targetos/dev".to_string(),
+            "mount --make-private /mnt/targetos/dev".to_string(),
+            "mount -t devpts devpts /mnt/targetos/dev/pts || true".to_string(),
+            "mount --rbind /proc /mnt/targetos/proc".to_string(),
+            "mount --make-private /mnt/targetos/proc".to_string(),
+            "mount --rbind /sys /mnt/targetos/sys".to_string(),
+            "mount --make-private /mnt/targetos/sys".to_string(),
+            "mount --rbind /run /mnt/targetos/run".to_string(),
+            "mount --make-private /mnt/targetos/run".to_string(),
+            "echo 'nameserver 1.1.1.1' > /mnt/targetos/etc/resolv.conf".to_string(),
+
+            // Ensure efivarfs and install core packages
+            "chroot /mnt/targetos bash -lc '[ -d /sys/firmware/efi/efivars ] || mkdir -p /sys/firmware/efi/efivars; mountpoint -q /sys/firmware/efi/efivars || mount -t efivarfs efivarfs /sys/firmware/efi/efivars || true'".to_string(),
+            "chroot /mnt/targetos bash -lc 'apt update'".to_string(),
+            "chroot /mnt/targetos bash -lc 'DEBIAN_FRONTEND=noninteractive apt install -y grub-efi-amd64 grub-efi-amd64-signed linux-image-generic shim-signed zfs-initramfs zfsutils-linux zsys efibootmgr cryptsetup cryptsetup-initramfs'".to_string(),
+
+            // GRUB installation with fallbacks
+            "chroot /mnt/targetos bash -lc 'grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=ubuntu --recheck'".to_string(),
+            "chroot /mnt/targetos bash -lc 'grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=ubuntu --recheck --no-nvram' # fallback".to_string(),
+            "chroot /mnt/targetos bash -lc 'grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=ubuntu --recheck --removable' # fallback".to_string(),
+            "chroot /mnt/targetos bash -lc 'update-grub'".to_string(),
+        ];
+
+        for c in cmds { warn!("  {}", c); }
+        warn!("=== END OF NEXT COMMANDS ===");
         Ok(())
     }
 

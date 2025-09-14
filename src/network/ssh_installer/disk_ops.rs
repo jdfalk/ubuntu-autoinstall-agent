@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/disk_ops.rs
-// version: 1.2.0
+// version: 1.3.0
 // guid: sshdisk1-2345-6789-abcd-ef0123456789
 
 //! Disk operations for SSH installation
@@ -151,29 +151,30 @@ impl<'a> DiskManager<'a> {
     async fn create_partitions(&mut self, config: &InstallationConfig) -> Result<()> {
         info!("Creating disk partitions");
 
-        // Create GPT partition table
-        self.log_and_execute("Creating GPT table", &format!("parted -s {} mklabel gpt", config.disk_device)).await?;
+        // Use sgdisk to create partitions with exact GPT type codes and names:
+        // 1: EF00 (EFI System Partition) 512MiB
+        // 2: 8300 (Linux filesystem) 4GiB (RESET)
+        // 3: BE00 (Solaris boot) 2GiB (BPOOL)
+        // 4: 8309 (Linux LUKS) remainder of disk (RPOOL via LUKS mapper)
 
-        // ESP partition (1MiB to 513MiB)
-        self.log_and_execute("Creating ESP partition",
-            &format!("parted -s {} mkpart ESP fat32 1MiB 513MiB", config.disk_device)).await?;
-        self.log_and_execute("Setting ESP boot flag",
-            &format!("parted -s {} set 1 boot on", config.disk_device)).await?;
-        self.log_and_execute("Setting ESP esp flag",
-            &format!("parted -s {} set 1 esp on", config.disk_device)).await?;
+        // Create new GPT
+        self.log_and_execute("Create new GPT label", &format!("sgdisk -o {}", config.disk_device)).await?;
 
-        // RESET partition (513MiB to 4609MiB)
-        self.log_and_execute("Creating RESET partition",
-            &format!("parted -s {} mkpart RESET fat32 513MiB 4609MiB", config.disk_device)).await?;
+        // Partition 1: EFI System, 512MiB starting at sector 2048 (~1MiB)
+        self.log_and_execute("Create ESP (p1)", &format!("sgdisk -n 1:2048:+512M -t 1:EF00 -c 1:'EFI System Partition' {}", config.disk_device)).await?;
 
-        // BPOOL partition (4609MiB to 6657MiB)
-        self.log_and_execute("Creating BPOOL partition",
-            &format!("parted -s {} mkpart BPOOL 4609MiB 6657MiB", config.disk_device)).await?;
+        // Partition 2: RESET ext4, 4GiB
+        self.log_and_execute("Create RESET (p2)", &format!("sgdisk -n 2:0:+4G -t 2:8300 -c 2:'RESET' {}", config.disk_device)).await?;
 
-        // LUKS partition (6657MiB to 100%)
-        // We use the LUKS-mapped device as the sole vdev for rpool; no separate RPOOL partition.
-        self.log_and_execute("Creating LUKS partition",
-            &format!("parted -s {} mkpart LUKS 6657MiB 100%", config.disk_device)).await?;
+        // Partition 3: BPOOL, 2GiB, ZFS boot pool type
+        self.log_and_execute("Create BPOOL (p3)", &format!("sgdisk -n 3:0:+2G -t 3:BE00 -c 3:'BPOOL' {}", config.disk_device)).await?;
+
+        // Partition 4: LUKS, rest of disk
+        self.log_and_execute("Create LUKS (p4)", &format!("sgdisk -n 4:0:0 -t 4:8309 -c 4:'LUKS' {}", config.disk_device)).await?;
+
+        // Inform the kernel of partition table changes
+        self.log_and_execute("Reload partition table", &format!("partprobe {} || true", config.disk_device)).await?;
+        self.log_and_execute("Settle udev", "udevadm settle || true").await?;
 
         Ok(())
     }
@@ -183,8 +184,8 @@ impl<'a> DiskManager<'a> {
         info!("Formatting partitions");
 
         // Format ESP and RESET partitions
-        self.log_and_execute("Formatting ESP", &format!("mkfs.fat -F32 {}p1", config.disk_device)).await?;
-        self.log_and_execute("Formatting RESET", &format!("mkfs.fat -F32 {}p2", config.disk_device)).await?;
+        self.log_and_execute("Formatting ESP (vfat)", &format!("mkfs.vfat -F32 -n ESP {}p1", config.disk_device)).await?;
+        self.log_and_execute("Formatting RESET (ext4)", &format!("mkfs.ext4 -F -L RESET {}p2", config.disk_device)).await?;
 
         Ok(())
     }
