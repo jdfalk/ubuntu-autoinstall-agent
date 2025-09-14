@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/system_setup.rs
-// version: 1.13.2
+// version: 1.14.0
 // guid: sshsys01-2345-6789-abcd-ef0123456789
 
 //! System setup and configuration for SSH installation
@@ -101,6 +101,20 @@ impl<'a> SystemConfigurator<'a> {
 
         // Timezone
         self.ssh.execute(&format!("ln -sf /usr/share/zoneinfo/{} /mnt/targetos/etc/localtime", config.timezone)).await?;
+
+        // Configure APT Deb822 sources for Ubuntu (archive + security) inside target
+        let release = config.debootstrap_release.as_deref().unwrap_or("plucky");
+        let ubuntu_sources = format!(
+            "Types: deb\nURIs: http://archive.ubuntu.com/ubuntu/\nSuites: {rel}\nComponents: main restricted universe multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n\nTypes: deb\nURIs: http://security.ubuntu.com/ubuntu\nSuites: {rel}-security\nComponents: main restricted universe multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n",
+            rel = release
+        );
+        self.ssh.execute("mkdir -p /mnt/targetos/etc/apt/sources.list.d").await?;
+        self.ssh.execute(&format!(
+            "cat > /mnt/targetos/etc/apt/sources.list.d/ubuntu.sources << 'EOF'\n{}\nEOF",
+            ubuntu_sources
+        )).await?;
+        // Remove legacy sources.list to avoid duplicate entries
+        let _ = self.ssh.execute("rm -f /mnt/targetos/etc/apt/sources.list || true").await;
 
         Ok(())
     }
@@ -229,10 +243,15 @@ impl<'a> SystemConfigurator<'a> {
         let chroot_commands = vec![
             "apt update",
             // Core UEFI + ZFS packages
-            "DEBIAN_FRONTEND=noninteractive apt install -y grub-efi-amd64 grub-efi-amd64-signed linux-image-generic shim-signed zfs-initramfs zfsutils-linux zsys efibootmgr cryptsetup cryptsetup-initramfs",
+            "DEBIAN_FRONTEND=noninteractive apt install -y grub-efi-amd64 grub-efi-amd64-signed linux-image-generic shim-signed zfs-initramfs zfsutils-linux zsys efibootmgr cryptsetup cryptsetup-initramfs dosfstools",
             // Helpful tooling
             "DEBIAN_FRONTEND=noninteractive apt install -y linux-headers-generic",
             "DEBIAN_FRONTEND=noninteractive apt install -y openssh-server vim htop curl",
+            // Reduce probing noise and set up common groups (best-effort)
+            "DEBIAN_FRONTEND=noninteractive apt purge -y os-prober || true",
+            "addgroup --system lpadmin || true",
+            "addgroup --system lxd || true",
+            "addgroup --system sambashare || true",
         ];
 
         for cmd in chroot_commands {
@@ -273,6 +292,15 @@ impl<'a> SystemConfigurator<'a> {
             // Best-effort: some services may not exist until packages are installed
             let _ = self.log_and_execute(&format!("ZFS: {}", cmd), &format!("chroot /mnt/targetos bash -lc '{}'", cmd)).await;
         }
+
+        // Seed ZFS cache files and correct mountpoint paths for boot
+        let _ = self.log_and_execute("Ensure /etc/zfs in target", "mkdir -p /mnt/targetos/etc/zfs").await;
+        let _ = self.log_and_execute("Copy zpool.cache", "cp -f /etc/zfs/zpool.cache /mnt/targetos/etc/zfs/ 2>/dev/null || true").await;
+        let _ = self.log_and_execute("Ensure zfs-list.cache dir", "mkdir -p /mnt/targetos/etc/zfs/zfs-list.cache").await;
+        let _ = self.log_and_execute("Touch zfs-list.cache files", "bash -lc 'touch /mnt/targetos/etc/zfs/zfs-list.cache/bpool /mnt/targetos/etc/zfs/zfs-list.cache/rpool'").await;
+        let _ = self.log_and_execute("Populate zfs-list via zed", "chroot /mnt/targetos bash -lc 'timeout 5 zed -F || true'").await;
+        let _ = self.log_and_execute("Fix zfs-list paths", "chroot /mnt/targetos bash -lc 'sed -Ei \"s|/mnt/targetos/?|/|\" /etc/zfs/zfs-list.cache/* || true'").await;
+        let _ = self.log_and_execute("Update initramfs (post-ZFS)", "chroot /mnt/targetos bash -lc 'update-initramfs -u -k all'").await;
 
         Ok(())
     }
@@ -349,24 +377,19 @@ impl<'a> SystemConfigurator<'a> {
         Ok(())
     }
 
-    /// Configure LUKS key handling in chroot
+    /// Configure LUKS crypttab in chroot (no keyfile; prompt at boot via initramfs)
     pub async fn setup_luks_key_in_chroot(&mut self, config: &InstallationConfig) -> Result<()> {
-        info!("Setting up LUKS key in chroot");
+        info!("Configuring LUKS crypttab in chroot");
 
-        // Create keyfile in target system
-        self.log_and_execute("Creating LUKS keyfile",
-            &format!("echo '{}' > /mnt/targetos/etc/luks.key", config.luks_key)).await?;
-        self.log_and_execute("Setting keyfile permissions", "chmod 600 /mnt/targetos/etc/luks.key").await?;
-
-        // Discover partition UUID and write crypttab using UUID with recommended options
+        // Discover partition UUID and write crypttab using by-uuid path with recommended options
         let part = format!("{}p4", config.disk_device);
         let uuid_out = self.ssh.execute_with_output(&format!("blkid -s UUID -o value {} 2>/dev/null || true", part)).await?;
         let uuid = uuid_out.trim();
-        let crypt_device = if uuid.is_empty() { part.clone() } else { format!("UUID={}", uuid) };
-        let crypttab_entry = format!("luks {} /etc/luks.key luks,discard", crypt_device);
+        let crypt_device = if uuid.is_empty() { part.clone() } else { format!("/dev/disk/by-uuid/{}", uuid) };
+        let crypttab_entry = format!("luks {} none luks,discard,initramfs", crypt_device);
         let _ = self.ssh.execute(&format!("[ -d /mnt/targetos/etc ] || mkdir -p /mnt/targetos/etc; echo '{}' > /mnt/targetos/etc/crypttab", crypttab_entry)).await;
 
-        // Update initramfs to include cryptroot and keyfile (post-crypttab)
+        // Update initramfs after crypttab changes
         let _ = self.log_and_execute("Updating initramfs (post-crypttab)", "chroot /mnt/targetos bash -lc 'update-initramfs -u -k all'").await;
 
         Ok(())

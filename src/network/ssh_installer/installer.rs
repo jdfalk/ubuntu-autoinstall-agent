@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/installer.rs
-// version: 1.9.0
+// version: 1.10.0
 // guid: sshins01-2345-6789-abcd-ef0123456789
 
 //! Main SSH installer orchestrating all installation phases
@@ -135,14 +135,20 @@ impl SshInstaller {
         warn!("The next commands that would be executed are listed below. You can run them manually on the target.");
 
         let esp_part = format!("{}p1", config.disk_device);
+        let release = config.debootstrap_release.as_deref().unwrap_or("plucky");
         let cmds = vec![
             // Mount target root and boot/EFI
             format!("mkdir -p /mnt/targetos/boot/efi"),
             format!("mount {} /mnt/targetos/boot/efi", esp_part),
 
             // Debootstrap base system (plucky), try primary mirror first then old-releases if needed
-            format!("debootstrap {} /mnt/targetos {}", config.debootstrap_release.as_deref().unwrap_or("plucky"), config.debootstrap_mirror.as_deref().unwrap_or("http://archive.ubuntu.com/ubuntu/")),
-            format!("debootstrap {} /mnt/targetos {} # fallback if the above fails", config.debootstrap_release.as_deref().unwrap_or("plucky"), "http://old-releases.ubuntu.com/ubuntu/"),
+            format!("debootstrap {} /mnt/targetos {}", release, config.debootstrap_mirror.as_deref().unwrap_or("http://archive.ubuntu.com/ubuntu/")),
+            format!("debootstrap {} /mnt/targetos {} # fallback if the above fails", release, "http://old-releases.ubuntu.com/ubuntu/"),
+
+            // Configure APT Deb822 sources in target
+            format!("mkdir -p /mnt/targetos/etc/apt/sources.list.d"),
+            format!("bash -lc 'cat > /mnt/targetos/etc/apt/sources.list.d/ubuntu.sources <<\'EOF\'\nTypes: deb\nURIs: http://archive.ubuntu.com/ubuntu/\nSuites: {rel}\nComponents: main restricted universe multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n\nTypes: deb\nURIs: http://security.ubuntu.com/ubuntu\nSuites: {rel}-security\nComponents: main restricted universe multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\nEOF'", rel=release),
+            "rm -f /mnt/targetos/etc/apt/sources.list || true".to_string(),
 
             // Prepare chroot mounts
             "mount --rbind /dev /mnt/targetos/dev".to_string(),
@@ -156,10 +162,30 @@ impl SshInstaller {
             "mount --make-private /mnt/targetos/run".to_string(),
             "echo 'nameserver 1.1.1.1' > /mnt/targetos/etc/resolv.conf".to_string(),
 
+            // Add ESP to fstab using UUID
+            format!("bash -lc 'ESP_UUID=$(blkid -s UUID -o value {e} 2>/dev/null || true); if [ -n \"$ESP_UUID\" ]; then echo \"UUID=$ESP_UUID /boot/efi vfat umask=0077 0 1\" >> /mnt/targetos/etc/fstab; fi'", e=esp_part),
+
             // Ensure efivarfs and install core packages
             "chroot /mnt/targetos bash -lc '[ -d /sys/firmware/efi/efivars ] || mkdir -p /sys/firmware/efi/efivars; mountpoint -q /sys/firmware/efi/efivars || mount -t efivarfs efivarfs /sys/firmware/efi/efivars || true'".to_string(),
             "chroot /mnt/targetos bash -lc 'apt update'".to_string(),
-            "chroot /mnt/targetos bash -lc 'DEBIAN_FRONTEND=noninteractive apt install -y grub-efi-amd64 grub-efi-amd64-signed linux-image-generic shim-signed zfs-initramfs zfsutils-linux zsys efibootmgr cryptsetup cryptsetup-initramfs'".to_string(),
+            "chroot /mnt/targetos bash -lc 'DEBIAN_FRONTEND=noninteractive apt install -y grub-efi-amd64 grub-efi-amd64-signed linux-image-generic shim-signed zfs-initramfs zfsutils-linux zsys efibootmgr cryptsetup cryptsetup-initramfs dosfstools'".to_string(),
+            // Optional cleanups and groups
+            "chroot /mnt/targetos bash -lc 'DEBIAN_FRONTEND=noninteractive apt purge -y os-prober || true'".to_string(),
+            "chroot /mnt/targetos bash -lc 'addgroup --system lpadmin || true'".to_string(),
+            "chroot /mnt/targetos bash -lc 'addgroup --system lxd || true'".to_string(),
+            "chroot /mnt/targetos bash -lc 'addgroup --system sambashare || true'".to_string(),
+
+            // Configure crypttab to unlock LUKS at boot via initramfs
+            format!("bash -lc 'UUID=$(blkid -s UUID -o value {d}p4 2>/dev/null || true); DEV=\"{d}p4\"; [ -n \"$UUID\" ] && DEV=\"/dev/disk/by-uuid/$UUID\"; echo \"luks $DEV none luks,discard,initramfs\" > /mnt/targetos/etc/crypttab'", d=config.disk_device),
+            "chroot /mnt/targetos bash -lc 'update-initramfs -u -k all'".to_string(),
+
+            // ZFS cache seeding and path fix
+            "mkdir -p /mnt/targetos/etc/zfs/zfs-list.cache".to_string(),
+            "cp -f /etc/zfs/zpool.cache /mnt/targetos/etc/zfs/ 2>/dev/null || true".to_string(),
+            "bash -lc 'touch /mnt/targetos/etc/zfs/zfs-list.cache/bpool /mnt/targetos/etc/zfs/zfs-list.cache/rpool'".to_string(),
+            "chroot /mnt/targetos bash -lc 'timeout 5 zed -F || true'".to_string(),
+            "chroot /mnt/targetos bash -lc 'sed -Ei \"s|/mnt/targetos/?|/|\" /etc/zfs/zfs-list.cache/* || true'".to_string(),
+            "chroot /mnt/targetos bash -lc 'update-initramfs -u -k all'".to_string(),
 
             // GRUB installation with fallbacks
             "chroot /mnt/targetos bash -lc 'grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=ubuntu --recheck'".to_string(),
