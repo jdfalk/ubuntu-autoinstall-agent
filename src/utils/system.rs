@@ -1,5 +1,5 @@
 // file: src/utils/system.rs
-// version: 1.1.2
+// version: 1.1.3
 // guid: w3x4y5z6-a7b8-9012-3456-789012wxyzab
 
 //! System utility functions
@@ -258,6 +258,24 @@ mod tests {
 
         // Cleanup
         let _ = tokio::fs::remove_dir_all(temp_dir).await;
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_timeout_success() {
+        // Use a simple echo command which is widely available
+        let out = SystemUtils::execute_with_timeout("/bin/echo", &["hello"], 2)
+            .await
+            .unwrap();
+        assert!(out.contains("hello"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_timeout_timeout() {
+        // Use a sleep that exceeds timeout to trigger timeout path
+        let res = SystemUtils::execute_with_timeout("/bin/sleep", &["2"], 1).await;
+        assert!(res.is_err());
+        let msg = res.unwrap_err().to_string();
+        assert!(msg.contains("timed out"));
     }
 }
 

@@ -1,5 +1,5 @@
 // file: src/config/target.rs
-// version: 1.0.0
+// version: 1.0.1
 // guid: b2c3d4e5-f6g7-8901-2345-678901bcdefg
 
 //! Target machine configuration structures
@@ -142,5 +142,80 @@ impl NetworkConfig {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Architecture;
+
+    fn valid_target() -> TargetConfig {
+        TargetConfig {
+            hostname: "host".to_string(),
+            architecture: Architecture::Amd64,
+            disk_device: "/dev/sda".to_string(),
+            timezone: "UTC".to_string(),
+            network: NetworkConfig {
+                interface: "eth0".to_string(),
+                ip_address: None,
+                gateway: None,
+                dns_servers: vec!["1.1.1.1".to_string()],
+                dhcp: true,
+            },
+            users: vec![UserConfig { name: "admin".to_string(), sudo: true, ssh_keys: vec![], shell: None }],
+            luks_config: LuksConfig::default(),
+            packages: vec![],
+        }
+    }
+
+    #[test]
+    fn test_target_validate_ok() {
+        let t = valid_target();
+        assert!(t.validate().is_ok());
+    }
+
+    #[test]
+    fn test_target_validate_empty_hostname() {
+        let mut t = valid_target();
+        t.hostname = "".to_string();
+        assert!(t.validate().is_err());
+    }
+
+    #[test]
+    fn test_target_validate_invalid_disk() {
+        let mut t = valid_target();
+        t.disk_device = "sda".to_string();
+        assert!(t.validate().is_err());
+    }
+
+    #[test]
+    fn test_target_validate_users_and_sudo() {
+        let mut t = valid_target();
+        // No users
+        t.users.clear();
+        assert!(t.validate().is_err());
+
+        // No sudo user
+        t.users = vec![UserConfig { name: "u".to_string(), sudo: false, ssh_keys: vec![], shell: None }];
+        assert!(t.validate().is_err());
+    }
+
+    #[test]
+    fn test_network_validate() {
+        let mut n = NetworkConfig { interface: "eth0".to_string(), ip_address: None, gateway: None, dns_servers: vec![], dhcp: true };
+        assert!(n.validate().is_ok());
+
+        // Empty interface
+        n.interface.clear();
+        assert!(n.validate().is_err());
+
+        // Static requires ip and gateway
+        let mut n2 = NetworkConfig { interface: "eth0".to_string(), ip_address: None, gateway: None, dns_servers: vec![], dhcp: false };
+        assert!(n2.validate().is_err());
+        n2.ip_address = Some("192.168.1.10/24".to_string());
+        assert!(n2.validate().is_err());
+        n2.gateway = Some("192.168.1.1".to_string());
+        assert!(n2.validate().is_ok());
     }
 }

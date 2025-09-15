@@ -1,5 +1,5 @@
 // file: src/config/image.rs
-// version: 1.0.0
+// version: 1.0.1
 // guid: c3d4e5f6-g7h8-9012-3456-789012cdefgh
 
 //! Image specification and metadata structures
@@ -67,7 +67,8 @@ impl ImageSpec {
     /// Validate image specification
     pub fn validate(&self) -> crate::Result<()> {
         // Validate Ubuntu version format (basic check)
-        if !self.ubuntu_version.matches('.').count() == 1 {
+        // Expect a single dot, e.g., "24.04"; more rigorous validation could be added later
+        if self.ubuntu_version.matches('.').count() != 1 {
             return Err(crate::error::AutoInstallError::ValidationError(format!(
                 "Invalid Ubuntu version format: {}",
                 self.ubuntu_version
@@ -121,6 +122,63 @@ impl ImageSpec {
             custom_scripts: vec![],
             vm_config: VmConfig::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_validate_image_spec_valid() {
+        let spec = ImageSpec {
+            ubuntu_version: "24.04".to_string(),
+            architecture: Architecture::Amd64,
+            base_packages: vec!["openssh-server".to_string()],
+            custom_scripts: vec![],
+            vm_config: VmConfig { memory_mb: 2048, disk_size_gb: 20, cpu_cores: 2 },
+        };
+        assert!(spec.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_image_spec_invalid_version() {
+        let spec = ImageSpec {
+            ubuntu_version: "2404".to_string(), // missing dot
+            architecture: Architecture::Amd64,
+            base_packages: vec![],
+            custom_scripts: vec![],
+            vm_config: VmConfig::default(),
+        };
+        let err = spec.validate().unwrap_err();
+        assert!(err.to_string().contains("Invalid Ubuntu version format"));
+    }
+
+    #[test]
+    fn test_validate_image_spec_invalid_vm_config() {
+        let spec = ImageSpec {
+            ubuntu_version: "24.04".to_string(),
+            architecture: Architecture::Amd64,
+            base_packages: vec![],
+            custom_scripts: vec![],
+            vm_config: VmConfig { memory_mb: 512, disk_size_gb: 5, cpu_cores: 0 },
+        };
+        // Any of the constraints can fail; ensure we get an error
+        assert!(spec.validate().is_err());
+    }
+
+    #[test]
+    fn test_image_info_size_human() {
+        let info = ImageInfo::new(
+            "24.04".to_string(),
+            Architecture::Amd64,
+            1024 * 1024 * 3, // 3 MiB
+            "deadbeef".to_string(),
+            PathBuf::from("/tmp/x.qcow2"),
+        );
+        let h = info.size_human();
+        assert!(h.ends_with("MB") || h.ends_with("MiB"));
     }
 }
 
