@@ -16,6 +16,18 @@
 			"type": "shell",
 			"command": "git add -A",
 			"group": "build"
+		},
+		{
+			"label": "Git Commit",
+			"type": "shell",
+			"command": "git commit -m \"ci(lint,coverage,build): fix super-linter markdown config; stabilize llvm-cov; add cross-linkers\\n\\nChanges Made:\\n\\nci(lint): remove legacy MARKDOWN_LINTER_RULES that caused container path resolution to /action/lib/.automation; keep MARKDOWN_CONFIG_FILE (.github/linters/super-linter-ci.env).\\n- [.github/linters/super-linter-ci.env] - drop MARKDOWN_LINTER_RULES; bump header version.\\n\\nci(coverage): harden cargo-llvm-cov step; ensure htmlcov dir and verbose output for diagnostics.\\n- [.github/workflows/ci.yml] - create htmlcov; add --verbose; bump workflow version.\\n\\nci(build): fix aarch64 and musl cross-linker errors in release builds.\\n- [.cargo/config.toml] - add per-target linkers for aarch64-unknown-linux-gnu and x86_64-unknown-linux-musl.\\n- [.github/workflows/release-rust.yml] - export CC/CARGO_TARGET_*_LINKER env for robustness; bump version.\\n\\nci(rustfmt): ensure CI uses repo rustfmt config via RUSTFMT_CONFIG_FILE for Test Rust job.\\n- [.github/workflows/ci.yml] - set RUSTFMT_CONFIG_FILE for test-rust job.\"",
+			"group": "build"
+		},
+		{
+			"label": "Git Push",
+			"type": "shell",
+			"command": "git push",
+			"group": "build"
 		}
 	]
 }
