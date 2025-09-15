@@ -4,13 +4,13 @@
 
 //! VM management utilities
 
-use std::path::Path;
-use tokio::process::Command;
 use crate::{
     config::{Architecture, VmConfig},
     Result,
 };
-use tracing::{info, debug, warn};
+use std::path::Path;
+use tokio::process::Command;
+use tracing::{debug, info, warn};
 
 /// VM manager for creating and running virtual machines
 pub struct VmManager {
@@ -31,7 +31,7 @@ impl VmManager {
     pub async fn install_ubuntu_in_vm(
         &self,
         disk_path: &Path,
-        netboot_dir: &Path,  // Now contains extracted Ubuntu Server ISO files
+        netboot_dir: &Path, // Now contains extracted Ubuntu Server ISO files
         cloud_init_path: &Path,
         vm_memory_mb: u32,
     ) -> Result<()> {
@@ -55,7 +55,10 @@ impl VmManager {
             netboot_dir.join("casper").join("vmlinuz"),
             netboot_dir.join("casper").join("linux"),
             // Fallback to old netboot structure for backwards compatibility
-            netboot_dir.join("ubuntu-installer").join("amd64").join("linux"),
+            netboot_dir
+                .join("ubuntu-installer")
+                .join("amd64")
+                .join("linux"),
             netboot_dir.join("amd64").join("linux"),
             netboot_dir.join("amd64").join("vmlinuz"),
             netboot_dir.join("amd64").join("kernel"),
@@ -68,7 +71,10 @@ impl VmManager {
             netboot_dir.join("casper").join("initrd"),
             netboot_dir.join("casper").join("initrd.gz"),
             // Fallback to old netboot structure for backwards compatibility
-            netboot_dir.join("ubuntu-installer").join("amd64").join("initrd.gz"),
+            netboot_dir
+                .join("ubuntu-installer")
+                .join("amd64")
+                .join("initrd.gz"),
             netboot_dir.join("amd64").join("initrd.gz"),
             netboot_dir.join("amd64").join("initrd"),
             netboot_dir.join("initrd.gz"),
@@ -105,7 +111,18 @@ impl VmManager {
                         info!("  {}", file_name);
 
                         // If this is a directory, also list its contents
-                        if entry.file_type().await.unwrap_or_else(|_| std::fs::File::open("/dev/null").unwrap().metadata().unwrap().file_type()).is_dir() {
+                        if entry
+                            .file_type()
+                            .await
+                            .unwrap_or_else(|_| {
+                                std::fs::File::open("/dev/null")
+                                    .unwrap()
+                                    .metadata()
+                                    .unwrap()
+                                    .file_type()
+                            })
+                            .is_dir()
+                        {
                             let subdir_path = netboot_dir.join(&file_name);
                             if let Ok(mut subentries) = tokio::fs::read_dir(&subdir_path).await {
                                 info!("    Contents of {}:", file_name);
@@ -117,13 +134,19 @@ impl VmManager {
                     }
                 }
 
-                return Err(crate::error::AutoInstallError::VmError(
-                    format!("Netboot kernel or initrd not found in {}. \
+                return Err(crate::error::AutoInstallError::VmError(format!(
+                    "Netboot kernel or initrd not found in {}. \
                             Searched for kernel: {:?}, initrd: {:?}",
-                            netboot_dir.display(),
-                            possible_kernel_paths.iter().map(|p| p.to_string_lossy()).collect::<Vec<_>>(),
-                            possible_initrd_paths.iter().map(|p| p.to_string_lossy()).collect::<Vec<_>>())
-                ));
+                    netboot_dir.display(),
+                    possible_kernel_paths
+                        .iter()
+                        .map(|p| p.to_string_lossy())
+                        .collect::<Vec<_>>(),
+                    possible_initrd_paths
+                        .iter()
+                        .map(|p| p.to_string_lossy())
+                        .collect::<Vec<_>>()
+                )));
             }
         };
 
@@ -133,21 +156,35 @@ impl VmManager {
         // Build QEMU command with direct kernel boot (no UEFI needed for netboot)
         let mut cmd = Command::new(qemu_cmd);
         cmd.args([
-            "-machine", "accel=kvm:tcg", // Use KVM if available, fallback to TCG
-            "-cpu", "host",
-            "-m", &format!("{}M", vm_memory_mb),
-            "-smp", "2", // Default to 2 CPU cores
-            "-drive", &format!("file={},format=qcow2,if=virtio", disk_path.display()),
-            "-drive", &format!("file={},media=cdrom,readonly=on", cloud_init_iso.display()),
-            "-kernel", kernel_file.to_str().unwrap(),
-            "-initrd", initrd_file.to_str().unwrap(),
-            "-append", "console=ttyS0 console=tty0 autoinstall ds=nocloud;seedfrom=/dev/sr0/",
-            "-netdev", "user,id=net0",
-            "-device", "virtio-net,netdev=net0",
-            "-vnc", ":1", // Enable VNC on display :1 (port 5901) for debugging
-            "-serial", "file:/tmp/qemu-serial.log", // Log serial output to file
-            "-monitor", "unix:/tmp/qemu-monitor.sock,server,nowait", // Monitor socket
-            "-daemonize", // Run as daemon
+            "-machine",
+            "accel=kvm:tcg", // Use KVM if available, fallback to TCG
+            "-cpu",
+            "host",
+            "-m",
+            &format!("{}M", vm_memory_mb),
+            "-smp",
+            "2", // Default to 2 CPU cores
+            "-drive",
+            &format!("file={},format=qcow2,if=virtio", disk_path.display()),
+            "-drive",
+            &format!("file={},media=cdrom,readonly=on", cloud_init_iso.display()),
+            "-kernel",
+            kernel_file.to_str().unwrap(),
+            "-initrd",
+            initrd_file.to_str().unwrap(),
+            "-append",
+            "console=ttyS0 console=tty0 autoinstall ds=nocloud;seedfrom=/dev/sr0/",
+            "-netdev",
+            "user,id=net0",
+            "-device",
+            "virtio-net,netdev=net0",
+            "-vnc",
+            ":1", // Enable VNC on display :1 (port 5901) for debugging
+            "-serial",
+            "file:/tmp/qemu-serial.log", // Log serial output to file
+            "-monitor",
+            "unix:/tmp/qemu-monitor.sock,server,nowait", // Monitor socket
+            "-daemonize",                                // Run as daemon
         ]);
 
         // Add architecture-specific arguments
@@ -157,8 +194,10 @@ impl VmManager {
             }
             Architecture::Arm64 => {
                 cmd.args([
-                    "-machine", "virt",
-                    "-bios", "/usr/share/qemu-efi-aarch64/QEMU_EFI.fd",
+                    "-machine",
+                    "virt",
+                    "-bios",
+                    "/usr/share/qemu-efi-aarch64/QEMU_EFI.fd",
                 ]);
             }
         }
@@ -166,15 +205,15 @@ impl VmManager {
         debug!("Starting QEMU installation with command: {:?}", cmd);
 
         // Start QEMU as daemon
-        let output = cmd.output().await
-            .map_err(|e| crate::error::AutoInstallError::VmError(
-                format!("Failed to start QEMU: {}", e)
-            ))?;
+        let output = cmd.output().await.map_err(|e| {
+            crate::error::AutoInstallError::VmError(format!("Failed to start QEMU: {}", e))
+        })?;
 
         if !output.status.success() {
-            return Err(crate::error::AutoInstallError::VmError(
-                format!("QEMU failed to start: {}", String::from_utf8_lossy(&output.stderr))
-            ));
+            return Err(crate::error::AutoInstallError::VmError(format!(
+                "QEMU failed to start: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )));
         }
 
         info!("QEMU started in daemon mode");
@@ -206,7 +245,7 @@ impl VmManager {
             if start_time.elapsed() > timeout {
                 self.kill_qemu().await?;
                 return Err(crate::error::AutoInstallError::VmError(
-                    "VM installation timed out after 1 hour".to_string()
+                    "VM installation timed out after 1 hour".to_string(),
                 ));
             }
 
@@ -223,42 +262,51 @@ impl VmManager {
 
             if !combined_log.is_empty() {
                 // Check for cloud-init startup
-                if !cloud_init_started && (combined_log.contains("cloud-init") ||
-                                          combined_log.contains("Cloud-init") ||
-                                          combined_log.contains("Starting initial cloud-init") ||
-                                          combined_log.contains("cloud init")) {
+                if !cloud_init_started
+                    && (combined_log.contains("cloud-init")
+                        || combined_log.contains("Cloud-init")
+                        || combined_log.contains("Starting initial cloud-init")
+                        || combined_log.contains("cloud init"))
+                {
                     info!("Cloud-init detected, looking for autoinstall...");
                     cloud_init_started = true;
                 }
 
                 // Check for installer activity
-                if !installation_started && (combined_log.contains("autoinstall") ||
+                if !installation_started
+                    && (combined_log.contains("autoinstall") ||
                                            combined_log.contains("subiquity") ||  // Ubuntu Server installer
                                            combined_log.contains("installer") ||
                                            combined_log.contains("d-i") ||  // debian-installer
-                                           combined_log.contains("ubuntu-installer")) {
+                                           combined_log.contains("ubuntu-installer"))
+                {
                     info!("Ubuntu installer process started");
                     installation_started = true;
                 }
 
                 // Check for installation completion
-                if combined_log.contains("Installation finished") ||
-                   combined_log.contains("reboot") ||
-                   combined_log.contains("Installation complete") ||
-                   combined_log.contains("install successful") ||
-                   combined_log.contains("subiquity/Late") ||
-                   combined_log.contains("The system will reboot") {
-                    info!("Installation completed successfully in {:?}", start_time.elapsed());
+                if combined_log.contains("Installation finished")
+                    || combined_log.contains("reboot")
+                    || combined_log.contains("Installation complete")
+                    || combined_log.contains("install successful")
+                    || combined_log.contains("subiquity/Late")
+                    || combined_log.contains("The system will reboot")
+                {
+                    info!(
+                        "Installation completed successfully in {:?}",
+                        start_time.elapsed()
+                    );
                     self.shutdown_qemu().await?;
                     return Ok(());
                 }
 
                 // Check for actual installation errors (not normal kernel messages)
-                if combined_log.contains("Installation failed") ||
-                   combined_log.contains("autoinstall failed") ||
-                   combined_log.contains("FATAL ERROR") ||
-                   combined_log.contains("cloud-init failed") ||
-                   combined_log.contains("Install failed") {
+                if combined_log.contains("Installation failed")
+                    || combined_log.contains("autoinstall failed")
+                    || combined_log.contains("FATAL ERROR")
+                    || combined_log.contains("cloud-init failed")
+                    || combined_log.contains("Install failed")
+                {
                     warn!("Installation error detected in logs");
                 }
 
@@ -281,8 +329,12 @@ impl VmManager {
             }
 
             // Log progress periodically
-            if start_time.elapsed().as_secs() % 300 == 0 { // Every 5 minutes
-                info!("Installation in progress... elapsed: {:?}", start_time.elapsed());
+            if start_time.elapsed().as_secs() % 300 == 0 {
+                // Every 5 minutes
+                info!(
+                    "Installation in progress... elapsed: {:?}",
+                    start_time.elapsed()
+                );
             }
 
             tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
@@ -291,19 +343,24 @@ impl VmManager {
 
     /// Send command to QEMU monitor
     async fn send_monitor_command(&self, command: &str) -> Result<()> {
-    use tokio::io::AsyncWriteExt;
-    #[cfg(unix)]
-    use tokio::net::UnixStream;
+        use tokio::io::AsyncWriteExt;
+        #[cfg(unix)]
+        use tokio::net::UnixStream;
 
         // Connect to QEMU monitor socket
         #[cfg(unix)]
         match UnixStream::connect("/tmp/qemu-monitor.sock").await {
             Ok(mut stream) => {
                 let cmd_with_newline = format!("{}\n", command);
-                stream.write_all(cmd_with_newline.as_bytes()).await
-                    .map_err(|e| crate::error::AutoInstallError::VmError(
-                        format!("Failed to send monitor command: {}", e)
-                    ))?;
+                stream
+                    .write_all(cmd_with_newline.as_bytes())
+                    .await
+                    .map_err(|e| {
+                        crate::error::AutoInstallError::VmError(format!(
+                            "Failed to send monitor command: {}",
+                            e
+                        ))
+                    })?;
                 debug!("Sent monitor command: {}", command);
                 Ok(())
             }
@@ -366,23 +423,29 @@ impl VmManager {
 
         let output = Command::new("genisoimage")
             .args([
-                "-output", iso_path.to_str().unwrap(),
-                "-volid", "cidata",
+                "-output",
+                iso_path.to_str().unwrap(),
+                "-volid",
+                "cidata",
                 "-joliet",
                 "-rock",
                 cloud_init_path.to_str().unwrap(),
             ])
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::VmError(
-                format!("Failed to create cloud-init ISO: {}", e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::VmError(format!(
+                    "Failed to create cloud-init ISO: {}",
+                    e
+                ))
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(crate::error::AutoInstallError::VmError(
-                format!("genisoimage failed: {}", stderr)
-            ));
+            return Err(crate::error::AutoInstallError::VmError(format!(
+                "genisoimage failed: {}",
+                stderr
+            )));
         }
 
         debug!("Cloud-init ISO created: {}", iso_path.display());
@@ -391,7 +454,10 @@ impl VmManager {
 
     /// Test VM functionality by starting a test VM
     pub async fn test_vm_functionality(&self, architecture: Architecture) -> Result<()> {
-        info!("Testing VM functionality for {} architecture", architecture.as_str());
+        info!(
+            "Testing VM functionality for {} architecture",
+            architecture.as_str()
+        );
 
         let qemu_cmd = match architecture {
             Architecture::Amd64 => "qemu-system-x86_64",
@@ -399,39 +465,41 @@ impl VmManager {
         };
 
         // Create a temporary test disk
-        let temp_dir = tempfile::tempdir()
-            .map_err(crate::error::AutoInstallError::IoError)?;
+        let temp_dir = tempfile::tempdir().map_err(crate::error::AutoInstallError::IoError)?;
         let test_disk = temp_dir.path().join("test.qcow2");
 
         // Create test disk
         let output = Command::new("qemu-img")
-            .args([
-                "create",
-                "-f", "qcow2",
-                test_disk.to_str().unwrap(),
-                "1G",
-            ])
+            .args(["create", "-f", "qcow2", test_disk.to_str().unwrap(), "1G"])
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::VmError(
-                format!("Failed to create test disk: {}", e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::VmError(format!(
+                    "Failed to create test disk: {}",
+                    e
+                ))
+            })?;
 
         if !output.status.success() {
             return Err(crate::error::AutoInstallError::VmError(
-                "Failed to create test disk image".to_string()
+                "Failed to create test disk image".to_string(),
             ));
         }
 
         // Test QEMU startup (without actually booting)
         let mut cmd = Command::new(qemu_cmd);
         cmd.args([
-            "-machine", "accel=kvm:tcg",
-            "-m", "512M",
-            "-drive", &format!("file={},format=qcow2,if=virtio", test_disk.display()),
+            "-machine",
+            "accel=kvm:tcg",
+            "-m",
+            "512M",
+            "-drive",
+            &format!("file={},format=qcow2,if=virtio", test_disk.display()),
             "-nographic",
-            "-serial", "none",
-            "-monitor", "none",
+            "-serial",
+            "none",
+            "-monitor",
+            "none",
             "-S", // Start in stopped state
         ]);
 
@@ -445,17 +513,15 @@ impl VmManager {
             }
         }
 
-        let mut child = cmd.spawn()
-            .map_err(|e| crate::error::AutoInstallError::VmError(
-                format!("Failed to start test VM: {}", e)
-            ))?;
+        let mut child = cmd.spawn().map_err(|e| {
+            crate::error::AutoInstallError::VmError(format!("Failed to start test VM: {}", e))
+        })?;
 
         // Give it a moment to start, then kill it
         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-        child.kill().await
-            .map_err(|e| crate::error::AutoInstallError::VmError(
-                format!("Failed to kill test VM: {}", e)
-            ))?;
+        child.kill().await.map_err(|e| {
+            crate::error::AutoInstallError::VmError(format!("Failed to kill test VM: {}", e))
+        })?;
 
         let _ = child.wait().await;
 
@@ -469,13 +535,14 @@ impl VmManager {
         {
             use std::os::unix::fs::MetadataExt;
 
-            Path::new("/dev/kvm").exists() &&
-            tokio::fs::metadata("/dev/kvm").await
-                .map(|m| {
-                    // Check if it's a character device (mode & S_IFMT == S_IFCHR)
-                    (m.mode() & 0o170000) == 0o020000
-                })
-                .unwrap_or(false)
+            Path::new("/dev/kvm").exists()
+                && tokio::fs::metadata("/dev/kvm")
+                    .await
+                    .map(|m| {
+                        // Check if it's a character device (mode & S_IFMT == S_IFCHR)
+                        (m.mode() & 0o170000) == 0o020000
+                    })
+                    .unwrap_or(false)
         }
 
         #[cfg(not(unix))]
@@ -487,11 +554,12 @@ impl VmManager {
 
     /// Get recommended VM configuration based on system resources
     pub async fn get_recommended_vm_config(&self) -> Result<VmConfig> {
-    let available_memory = crate::utils::system::SystemUtils::get_available_memory().await?;
-        let available_space = crate::utils::system::SystemUtils::get_available_space("/tmp").await?;
+        let available_memory = crate::utils::system::SystemUtils::get_available_memory().await?;
+        let available_space =
+            crate::utils::system::SystemUtils::get_available_space("/tmp").await?;
 
         // Use 50% of available memory, but at least 1GB and at most 8GB
-    let memory_mb = (available_memory as u32 / 2).clamp(1024, 8192);
+        let memory_mb = (available_memory as u32 / 2).clamp(1024, 8192);
 
         // Use 20GB disk space or 50% of available space, whichever is smaller
         let disk_size_gb = std::cmp::min(20, available_space as u32 / 2);
@@ -553,8 +621,12 @@ mod tests {
         // Create mock cloud-init files
         let cloud_init_dir = temp_dir.path().join("cloud-init");
         tokio::fs::create_dir_all(&cloud_init_dir).await.unwrap();
-        tokio::fs::write(cloud_init_dir.join("user-data"), "test data").await.unwrap();
-        tokio::fs::write(cloud_init_dir.join("meta-data"), "test meta").await.unwrap();
+        tokio::fs::write(cloud_init_dir.join("user-data"), "test data")
+            .await
+            .unwrap();
+        tokio::fs::write(cloud_init_dir.join("meta-data"), "test meta")
+            .await
+            .unwrap();
 
         // Skip this test if genisoimage is not available
         if crate::utils::system::SystemUtils::command_exists("genisoimage").await {

@@ -4,9 +4,9 @@
 
 //! Disk utility functions
 
+use crate::Result;
 use std::path::Path;
 use tokio::process::Command;
-use crate::Result;
 use tracing::{debug, warn};
 
 /// Disk utility functions
@@ -24,21 +24,27 @@ impl DiskUtils {
             .args(["-bno", "SIZE", device])
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::DiskError(
-                format!("Failed to get disk size for {}: {}", device, e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::DiskError(format!(
+                    "Failed to get disk size for {}: {}",
+                    device, e
+                ))
+            })?;
 
         if !output.status.success() {
-            return Err(crate::error::AutoInstallError::DiskError(
-                format!("lsblk failed for device {}", device)
-            ));
+            return Err(crate::error::AutoInstallError::DiskError(format!(
+                "lsblk failed for device {}",
+                device
+            )));
         }
 
         let size_str = String::from_utf8_lossy(&output.stdout);
-        let size_bytes: u64 = size_str.trim().parse()
-            .map_err(|_| crate::error::AutoInstallError::DiskError(
-                format!("Failed to parse disk size: {}", size_str)
-            ))?;
+        let size_bytes: u64 = size_str.trim().parse().map_err(|_| {
+            crate::error::AutoInstallError::DiskError(format!(
+                "Failed to parse disk size: {}",
+                size_str
+            ))
+        })?;
 
         Ok(size_bytes / (1024 * 1024 * 1024)) // Convert to GB
     }
@@ -49,9 +55,12 @@ impl DiskUtils {
             .args(["-S", device])
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::DiskError(
-                format!("Failed to check mount status for {}: {}", device, e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::DiskError(format!(
+                    "Failed to check mount status for {}: {}",
+                    device, e
+                ))
+            })?;
 
         Ok(output.status.success())
     }
@@ -65,15 +74,19 @@ impl DiskUtils {
                 .arg(device)
                 .output()
                 .await
-                .map_err(|e| crate::error::AutoInstallError::DiskError(
-                    format!("Failed to unmount {}: {}", device, e)
-                ))?;
+                .map_err(|e| {
+                    crate::error::AutoInstallError::DiskError(format!(
+                        "Failed to unmount {}: {}",
+                        device, e
+                    ))
+                })?;
 
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                return Err(crate::error::AutoInstallError::DiskError(
-                    format!("Failed to unmount {}: {}", device, stderr)
-                ));
+                return Err(crate::error::AutoInstallError::DiskError(format!(
+                    "Failed to unmount {}: {}",
+                    device, stderr
+                )));
             }
         }
 
@@ -89,15 +102,19 @@ impl DiskUtils {
             .args(["-af", device])
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::DiskError(
-                format!("Failed to wipe {}: {}", device, e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::DiskError(format!(
+                    "Failed to wipe {}: {}",
+                    device, e
+                ))
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(crate::error::AutoInstallError::DiskError(
-                format!("Failed to wipe {}: {}", device, stderr)
-            ));
+            return Err(crate::error::AutoInstallError::DiskError(format!(
+                "Failed to wipe {}: {}",
+                device, stderr
+            )));
         }
 
         debug!("Disk wiped successfully: {}", device);
@@ -112,15 +129,19 @@ impl DiskUtils {
             .args(["-s", device, "mklabel", table_type])
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::DiskError(
-                format!("Failed to create partition table on {}: {}", device, e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::DiskError(format!(
+                    "Failed to create partition table on {}: {}",
+                    device, e
+                ))
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(crate::error::AutoInstallError::DiskError(
-                format!("Failed to create partition table on {}: {}", device, stderr)
-            ));
+            return Err(crate::error::AutoInstallError::DiskError(format!(
+                "Failed to create partition table on {}: {}",
+                device, stderr
+            )));
         }
 
         debug!("Partition table created successfully on {}", device);
@@ -132,24 +153,30 @@ impl DiskUtils {
         device: &str,
         start: &str,
         end: &str,
-        fs_type: &str
+        fs_type: &str,
     ) -> Result<String> {
-        debug!("Creating partition on {} from {} to {} with filesystem {}",
-               device, start, end, fs_type);
+        debug!(
+            "Creating partition on {} from {} to {} with filesystem {}",
+            device, start, end, fs_type
+        );
 
         let output = Command::new("parted")
             .args(["-s", device, "mkpart", "primary", fs_type, start, end])
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::DiskError(
-                format!("Failed to create partition on {}: {}", device, e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::DiskError(format!(
+                    "Failed to create partition on {}: {}",
+                    device, e
+                ))
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(crate::error::AutoInstallError::DiskError(
-                format!("Failed to create partition on {}: {}", device, stderr)
-            ));
+            return Err(crate::error::AutoInstallError::DiskError(format!(
+                "Failed to create partition on {}: {}",
+                device, stderr
+            )));
         }
 
         // Get the new partition device name
@@ -168,24 +195,31 @@ impl DiskUtils {
             "ext3" => "mkfs.ext3",
             "xfs" => "mkfs.xfs",
             "btrfs" => "mkfs.btrfs",
-            _ => return Err(crate::error::AutoInstallError::DiskError(
-                format!("Unsupported filesystem type: {}", fs_type)
-            )),
+            _ => {
+                return Err(crate::error::AutoInstallError::DiskError(format!(
+                    "Unsupported filesystem type: {}",
+                    fs_type
+                )))
+            }
         };
 
         let output = Command::new(mkfs_cmd)
             .args(["-F", device])
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::DiskError(
-                format!("Failed to format {}: {}", device, e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::DiskError(format!(
+                    "Failed to format {}: {}",
+                    device, e
+                ))
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(crate::error::AutoInstallError::DiskError(
-                format!("Failed to format {}: {}", device, stderr)
-            ));
+            return Err(crate::error::AutoInstallError::DiskError(format!(
+                "Failed to format {}: {}",
+                device, stderr
+            )));
         }
 
         debug!("Partition formatted successfully: {}", device);
@@ -198,41 +232,56 @@ impl DiskUtils {
             .args(["-bJo", "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE", device])
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::DiskError(
-                format!("Failed to get disk info for {}: {}", device, e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::DiskError(format!(
+                    "Failed to get disk info for {}: {}",
+                    device, e
+                ))
+            })?;
 
         if !output.status.success() {
-            return Err(crate::error::AutoInstallError::DiskError(
-                format!("lsblk failed for device {}", device)
-            ));
+            return Err(crate::error::AutoInstallError::DiskError(format!(
+                "lsblk failed for device {}",
+                device
+            )));
         }
 
         let json_str = String::from_utf8_lossy(&output.stdout);
-        let lsblk_output: serde_json::Value = serde_json::from_str(&json_str)
-            .map_err(|e| crate::error::AutoInstallError::DiskError(
-                format!("Failed to parse lsblk output: {}", e)
-            ))?;
+        let lsblk_output: serde_json::Value = serde_json::from_str(&json_str).map_err(|e| {
+            crate::error::AutoInstallError::DiskError(format!(
+                "Failed to parse lsblk output: {}",
+                e
+            ))
+        })?;
 
-        let blockdevices = lsblk_output["blockdevices"].as_array()
-            .ok_or_else(|| crate::error::AutoInstallError::DiskError(
-                "No block devices found in lsblk output".to_string()
-            ))?;
+        let blockdevices = lsblk_output["blockdevices"].as_array().ok_or_else(|| {
+            crate::error::AutoInstallError::DiskError(
+                "No block devices found in lsblk output".to_string(),
+            )
+        })?;
 
         if blockdevices.is_empty() {
-            return Err(crate::error::AutoInstallError::DiskError(
-                format!("No information found for device {}", device)
-            ));
+            return Err(crate::error::AutoInstallError::DiskError(format!(
+                "No information found for device {}",
+                device
+            )));
         }
 
         let device_info = &blockdevices[0];
 
         Ok(DiskInfo {
-            name: device_info["name"].as_str().unwrap_or("unknown").to_string(),
-            size_bytes: device_info["size"].as_str()
+            name: device_info["name"]
+                .as_str()
+                .unwrap_or("unknown")
+                .to_string(),
+            size_bytes: device_info["size"]
+                .as_str()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(0),
-            device_type: device_info["type"].as_str().unwrap_or("unknown").to_string(),
+            device_type: device_info["type"]
+                .as_str()
+                .unwrap_or("unknown")
+                .to_string(),
             mount_point: device_info["mountpoint"].as_str().map(|s| s.to_string()),
             filesystem: device_info["fstype"].as_str().map(|s| s.to_string()),
         })

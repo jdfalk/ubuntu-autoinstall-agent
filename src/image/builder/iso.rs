@@ -4,13 +4,13 @@
 
 //! ISO management and download utilities
 
-use std::path::{Path, PathBuf};
-use tokio::fs;
 use crate::{
     config::{Architecture, ImageSpec},
     network::download::NetworkDownloader,
     Result,
 };
+use std::path::{Path, PathBuf};
+use tokio::fs;
 use tracing::info;
 
 /// ISO download and caching manager
@@ -27,31 +27,48 @@ impl IsoManager {
     /// Download Ubuntu Server ISO if not cached and extract kernel/initrd for direct boot
     pub async fn get_ubuntu_iso(&self, spec: &ImageSpec) -> Result<PathBuf> {
         // For autoinstall, we need the full Ubuntu Server ISO, not netboot
-        let iso_dir = self.cache_dir.join("isos").join(format!("ubuntu-{}-{}",
-            spec.ubuntu_version, spec.architecture.as_str()));
+        let iso_dir = self.cache_dir.join("isos").join(format!(
+            "ubuntu-{}-{}",
+            spec.ubuntu_version,
+            spec.architecture.as_str()
+        ));
 
-        let extract_dir = self.cache_dir.join("extracted").join(format!("ubuntu-{}-{}",
-            spec.ubuntu_version, spec.architecture.as_str()));
+        let extract_dir = self.cache_dir.join("extracted").join(format!(
+            "ubuntu-{}-{}",
+            spec.ubuntu_version,
+            spec.architecture.as_str()
+        ));
 
-        fs::create_dir_all(&iso_dir).await
+        fs::create_dir_all(&iso_dir)
+            .await
             .map_err(crate::error::AutoInstallError::IoError)?;
 
-        fs::create_dir_all(&extract_dir).await
+        fs::create_dir_all(&extract_dir)
+            .await
             .map_err(crate::error::AutoInstallError::IoError)?;
 
         // Check if kernel files already extracted
         let kernel_path = extract_dir.join("casper").join("vmlinuz");
         if kernel_path.exists() {
-            info!("Using cached Ubuntu Server ISO files: {}", extract_dir.display());
+            info!(
+                "Using cached Ubuntu Server ISO files: {}",
+                extract_dir.display()
+            );
             return Ok(extract_dir);
         }
 
-        info!("Downloading and extracting Ubuntu Server ISO: {}", extract_dir.display());
+        info!(
+            "Downloading and extracting Ubuntu Server ISO: {}",
+            extract_dir.display()
+        );
 
         // Download Ubuntu Server ISO
         let iso_url = self.get_ubuntu_server_iso_url(spec)?;
-        let iso_path = iso_dir.join(format!("ubuntu-{}-live-server-{}.iso",
-            spec.ubuntu_version, spec.architecture.as_str()));
+        let iso_path = iso_dir.join(format!(
+            "ubuntu-{}-live-server-{}.iso",
+            spec.ubuntu_version,
+            spec.architecture.as_str()
+        ));
 
         info!("Downloading Ubuntu Server ISO from: {}", iso_url);
         self.download_file(&iso_url, &iso_path).await?;
@@ -60,7 +77,8 @@ impl IsoManager {
         self.extract_iso_boot_files(&iso_path, &extract_dir).await?;
 
         Ok(extract_dir)
-    }    /// Get Ubuntu Server ISO download URL
+    }
+    /// Get Ubuntu Server ISO download URL
     fn get_ubuntu_server_iso_url(&self, spec: &ImageSpec) -> Result<String> {
         // Ubuntu Server ISO URLs follow this pattern:
         // https://releases.ubuntu.com/{codename}/ubuntu-{version}-live-server-{arch}.iso
@@ -76,13 +94,18 @@ impl IsoManager {
             "24.04" => "noble",
             "23.10" => "mantic",
             "23.04" => "lunar",
-            _ => return Err(crate::error::AutoInstallError::ConfigError(
-                format!("Unsupported Ubuntu version: {}", spec.ubuntu_version)
-            )),
+            _ => {
+                return Err(crate::error::AutoInstallError::ConfigError(format!(
+                    "Unsupported Ubuntu version: {}",
+                    spec.ubuntu_version
+                )))
+            }
         };
 
-        Ok(format!("https://releases.ubuntu.com/{}/ubuntu-{}-live-server-{}.iso",
-                  codename, spec.ubuntu_version, arch_suffix))
+        Ok(format!(
+            "https://releases.ubuntu.com/{}/ubuntu-{}-live-server-{}.iso",
+            codename, spec.ubuntu_version, arch_suffix
+        ))
     }
 
     /// Extract kernel and initrd from Ubuntu Server ISO for direct boot
@@ -93,12 +116,14 @@ impl IsoManager {
 
         // Mount the ISO and extract kernel/initrd files
         let mount_dir = extract_dir.join("mnt");
-        fs::create_dir_all(&mount_dir).await
+        fs::create_dir_all(&mount_dir)
+            .await
             .map_err(crate::error::AutoInstallError::IoError)?;
 
         // Create a temporary mount script since we need sudo
         let mount_script = extract_dir.join("mount_iso.sh");
-        let mount_script_content = format!(r#"#!/bin/bash
+        let mount_script_content = format!(
+            r#"#!/bin/bash
 set -e
 
 # Mount ISO
@@ -117,13 +142,18 @@ sudo umount "{}"
 
 echo "ISO boot files extracted successfully"
 "#,
-            iso_path.display(), mount_dir.display(),
-            mount_dir.display(), extract_dir.display(),
-            mount_dir.display(), mount_dir.display(), extract_dir.display(),
+            iso_path.display(),
+            mount_dir.display(),
+            mount_dir.display(),
+            extract_dir.display(),
+            mount_dir.display(),
+            mount_dir.display(),
+            extract_dir.display(),
             mount_dir.display()
         );
 
-        fs::write(&mount_script, mount_script_content).await
+        fs::write(&mount_script, mount_script_content)
+            .await
             .map_err(crate::error::AutoInstallError::IoError)?;
 
         // Make script executable

@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 use tempfile::TempDir;
 use ubuntu_autoinstall_agent::{
-  config::{Architecture, TargetConfig, loader::ConfigLoader},
+    config::{loader::ConfigLoader, Architecture, TargetConfig},
     image::manager::ImageManager,
     Result,
 };
@@ -164,7 +164,10 @@ packages:
 
     // Set up loader with test environment variable
     let mut loader = ConfigLoader::new();
-    loader.set_env_var("TEST_LUKS_PASSWORD".to_string(), "supersecret123".to_string());
+    loader.set_env_var(
+        "TEST_LUKS_PASSWORD".to_string(),
+        "supersecret123".to_string(),
+    );
 
     // Load configuration
     let config = loader.load_target_config(&config_path)?;
@@ -204,7 +207,9 @@ packages:
 "#;
 
     let config_path = temp_dir.path().join("test-config.yaml");
-    tokio::fs::write(&config_path, config_content).await.unwrap();
+    tokio::fs::write(&config_path, config_content)
+        .await
+        .unwrap();
 
     // Load configuration should fail
     let loader = ConfigLoader::new();

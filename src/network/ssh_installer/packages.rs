@@ -4,9 +4,9 @@
 
 //! Package management for SSH installation
 
-use tracing::info;
 use crate::network::SshClient;
 use crate::Result;
+use tracing::info;
 
 pub struct PackageManager<'a> {
     ssh: &'a mut SshClient,
@@ -25,15 +25,25 @@ impl<'a> PackageManager<'a> {
         self.ssh.execute("apt-get update").await?;
 
         // Install ZFS utilities specifically
-        self.ssh.execute("DEBIAN_FRONTEND=noninteractive apt-get install -y zfsutils-linux").await?;
+        self.ssh
+            .execute("DEBIAN_FRONTEND=noninteractive apt-get install -y zfsutils-linux")
+            .await?;
 
         // Install other required packages
         let packages = [
-            "cryptsetup", "parted", "gdisk", "debootstrap",
-            "dosfstools", "xfsprogs", "util-linux"
+            "cryptsetup",
+            "parted",
+            "gdisk",
+            "debootstrap",
+            "dosfstools",
+            "xfsprogs",
+            "util-linux",
         ];
 
-        let install_cmd = format!("DEBIAN_FRONTEND=noninteractive apt-get install -y {}", packages.join(" "));
+        let install_cmd = format!(
+            "DEBIAN_FRONTEND=noninteractive apt-get install -y {}",
+            packages.join(" ")
+        );
         self.ssh.execute(&install_cmd).await?;
 
         info!("Required packages installed successfully");
@@ -45,7 +55,11 @@ impl<'a> PackageManager<'a> {
         let mut available = Vec::new();
 
         for tool in tools {
-            match self.ssh.execute(&format!("command -v {} >/dev/null 2>&1", tool)).await {
+            match self
+                .ssh
+                .execute(&format!("command -v {} >/dev/null 2>&1", tool))
+                .await
+            {
                 Ok(_) => available.push(tool.to_string()),
                 Err(_) => continue,
             }

@@ -4,10 +4,10 @@
 
 //! System investigation capabilities for SSH installation
 
-use tracing::{info, warn};
+use super::config::SystemInfo;
 use crate::network::SshClient;
 use crate::Result;
-use super::config::SystemInfo;
+use tracing::{info, warn};
 
 pub struct SystemInvestigator<'a> {
     ssh: &'a mut SshClient,
@@ -25,7 +25,9 @@ impl<'a> SystemInvestigator<'a> {
         let system_info = SystemInfo {
             hostname: self.get_command_output("hostname").await?,
             kernel_version: self.get_command_output("uname -r").await?,
-            os_release: self.get_command_output("cat /etc/os-release | head -1").await?,
+            os_release: self
+                .get_command_output("cat /etc/os-release | head -1")
+                .await?,
             disk_info: self.investigate_disks().await?,
             network_info: self.investigate_network().await?,
             available_tools: self.check_available_tools().await?,
@@ -55,13 +57,19 @@ impl<'a> SystemInvestigator<'a> {
 
         // Check for existing ZFS pools
         disk_info.push_str("=== ZFS Pools ===\n");
-        let zfs_pools = self.get_command_output("zpool list 2>/dev/null || echo 'No ZFS pools found'").await?;
+        let zfs_pools = self
+            .get_command_output("zpool list 2>/dev/null || echo 'No ZFS pools found'")
+            .await?;
         disk_info.push_str(&zfs_pools);
         disk_info.push_str("\n\n");
 
         // Check for LUKS devices
         disk_info.push_str("=== LUKS Devices ===\n");
-        let luks_devices = self.get_command_output("cryptsetup status luks 2>/dev/null || echo 'No LUKS devices found'").await?;
+        let luks_devices = self
+            .get_command_output(
+                "cryptsetup status luks 2>/dev/null || echo 'No LUKS devices found'",
+            )
+            .await?;
         disk_info.push_str(&luks_devices);
         disk_info.push_str("\n\n");
 
@@ -100,15 +108,27 @@ impl<'a> SystemInvestigator<'a> {
         info!("Checking available installation tools");
 
         let required_tools = vec![
-            "zfsutils-linux", "cryptsetup", "parted", "gdisk", "debootstrap",
-            "mkfs.fat", "mkfs.xfs", "wipefs", "sgdisk", "blkdiscard"
+            "zfsutils-linux",
+            "cryptsetup",
+            "parted",
+            "gdisk",
+            "debootstrap",
+            "mkfs.fat",
+            "mkfs.xfs",
+            "wipefs",
+            "sgdisk",
+            "blkdiscard",
         ];
 
         let mut available = Vec::new();
         let mut missing = Vec::new();
 
         for tool in &required_tools {
-            match self.ssh.execute(&format!("command -v {} >/dev/null 2>&1", tool)).await {
+            match self
+                .ssh
+                .execute(&format!("command -v {} >/dev/null 2>&1", tool))
+                .await
+            {
                 Ok(_) => available.push(tool.to_string()),
                 Err(_) => missing.push(tool.to_string()),
             }

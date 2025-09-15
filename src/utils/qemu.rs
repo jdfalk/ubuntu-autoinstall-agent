@@ -4,10 +4,10 @@
 
 //! QEMU image utilities
 
+use crate::Result;
 use std::path::Path;
 use tokio::process::Command;
-use tracing::{info, debug};
-use crate::Result;
+use tracing::{debug, info};
 
 /// QEMU image utilities
 pub struct QemuUtils;
@@ -16,27 +16,40 @@ impl QemuUtils {
     /// Get image information using qemu-img info
     pub async fn get_image_info<P: AsRef<Path>>(image_path: P) -> Result<ImageInfo> {
         let output = Command::new("qemu-img")
-            .args(["info", "--output=json", image_path.as_ref().to_str().unwrap()])
+            .args([
+                "info",
+                "--output=json",
+                image_path.as_ref().to_str().unwrap(),
+            ])
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::ImageError(
-                format!("Failed to get image info: {}", e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::ImageError(format!(
+                    "Failed to get image info: {}",
+                    e
+                ))
+            })?;
 
         if !output.status.success() {
-            return Err(crate::error::AutoInstallError::ImageError(
-                format!("qemu-img info failed: {}", String::from_utf8_lossy(&output.stderr))
-            ));
+            return Err(crate::error::AutoInstallError::ImageError(format!(
+                "qemu-img info failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )));
         }
 
         let info_str = String::from_utf8_lossy(&output.stdout);
-        let info_json: serde_json::Value = serde_json::from_str(&info_str)
-            .map_err(|e| crate::error::AutoInstallError::ImageError(
-                format!("Failed to parse qemu-img output: {}", e)
-            ))?;
+        let info_json: serde_json::Value = serde_json::from_str(&info_str).map_err(|e| {
+            crate::error::AutoInstallError::ImageError(format!(
+                "Failed to parse qemu-img output: {}",
+                e
+            ))
+        })?;
 
         Ok(ImageInfo {
-            format: info_json["format"].as_str().unwrap_or("unknown").to_string(),
+            format: info_json["format"]
+                .as_str()
+                .unwrap_or("unknown")
+                .to_string(),
             virtual_size: info_json["virtual-size"].as_u64().unwrap_or(0),
             actual_size: info_json["actual-size"].as_u64().unwrap_or(0),
             cluster_size: info_json["cluster-size"].as_u64(),
@@ -45,30 +58,33 @@ impl QemuUtils {
     }
 
     /// Convert image to raw format for extraction
-    pub async fn convert_to_raw<P: AsRef<Path>>(
-        qcow2_path: P,
-        raw_path: P,
-    ) -> Result<()> {
+    pub async fn convert_to_raw<P: AsRef<Path>>(qcow2_path: P, raw_path: P) -> Result<()> {
         info!("Converting QCOW2 image to raw format for extraction");
 
         let output = Command::new("qemu-img")
             .args([
                 "convert",
-                "-f", "qcow2",
-                "-O", "raw",
+                "-f",
+                "qcow2",
+                "-O",
+                "raw",
                 qcow2_path.as_ref().to_str().unwrap(),
                 raw_path.as_ref().to_str().unwrap(),
             ])
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::ImageError(
-                format!("Failed to convert image: {}", e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::ImageError(format!(
+                    "Failed to convert image: {}",
+                    e
+                ))
+            })?;
 
         if !output.status.success() {
-            return Err(crate::error::AutoInstallError::ImageError(
-                format!("Image conversion failed: {}", String::from_utf8_lossy(&output.stderr))
-            ));
+            return Err(crate::error::AutoInstallError::ImageError(format!(
+                "Image conversion failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )));
         }
 
         debug!("Image conversion completed");
@@ -76,23 +92,24 @@ impl QemuUtils {
     }
 
     /// Mount raw image using loop device
-    pub async fn mount_raw_image<P: AsRef<Path>>(
-        raw_path: P,
-        mount_point: P,
-    ) -> Result<String> {
+    pub async fn mount_raw_image<P: AsRef<Path>>(raw_path: P, mount_point: P) -> Result<String> {
         // Create loop device
         let output = Command::new("losetup")
             .args(["-P", "-f", "--show", raw_path.as_ref().to_str().unwrap()])
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::ImageError(
-                format!("Failed to create loop device: {}", e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::ImageError(format!(
+                    "Failed to create loop device: {}",
+                    e
+                ))
+            })?;
 
         if !output.status.success() {
-            return Err(crate::error::AutoInstallError::ImageError(
-                format!("Loop device creation failed: {}", String::from_utf8_lossy(&output.stderr))
-            ));
+            return Err(crate::error::AutoInstallError::ImageError(format!(
+                "Loop device creation failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )));
         }
 
         let loop_device = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -103,40 +120,46 @@ impl QemuUtils {
             .args([&partition, mount_point.as_ref().to_str().unwrap()])
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::ImageError(
-                format!("Failed to mount image: {}", e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::ImageError(format!("Failed to mount image: {}", e))
+            })?;
 
         if !output.status.success() {
             // Clean up loop device on mount failure
-            let _ = Command::new("losetup").args(["-d", &loop_device]).output().await;
-            return Err(crate::error::AutoInstallError::ImageError(
-                format!("Mount failed: {}", String::from_utf8_lossy(&output.stderr))
-            ));
+            let _ = Command::new("losetup")
+                .args(["-d", &loop_device])
+                .output()
+                .await;
+            return Err(crate::error::AutoInstallError::ImageError(format!(
+                "Mount failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )));
         }
 
-        info!("Image mounted at {} via {}", mount_point.as_ref().display(), loop_device);
+        info!(
+            "Image mounted at {} via {}",
+            mount_point.as_ref().display(),
+            loop_device
+        );
         Ok(loop_device)
     }
 
     /// Unmount image and clean up loop device
-    pub async fn unmount_image<P: AsRef<Path>>(
-        mount_point: P,
-        loop_device: &str,
-    ) -> Result<()> {
+    pub async fn unmount_image<P: AsRef<Path>>(mount_point: P, loop_device: &str) -> Result<()> {
         // Unmount
         let output = Command::new("umount")
             .args([mount_point.as_ref().to_str().unwrap()])
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::ImageError(
-                format!("Failed to unmount: {}", e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::ImageError(format!("Failed to unmount: {}", e))
+            })?;
 
         if !output.status.success() {
-            return Err(crate::error::AutoInstallError::ImageError(
-                format!("Unmount failed: {}", String::from_utf8_lossy(&output.stderr))
-            ));
+            return Err(crate::error::AutoInstallError::ImageError(format!(
+                "Unmount failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )));
         }
 
         // Remove loop device
@@ -144,14 +167,18 @@ impl QemuUtils {
             .args(["-d", loop_device])
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::ImageError(
-                format!("Failed to remove loop device: {}", e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::ImageError(format!(
+                    "Failed to remove loop device: {}",
+                    e
+                ))
+            })?;
 
         if !output.status.success() {
-            return Err(crate::error::AutoInstallError::ImageError(
-                format!("Loop device removal failed: {}", String::from_utf8_lossy(&output.stderr))
-            ));
+            return Err(crate::error::AutoInstallError::ImageError(format!(
+                "Loop device removal failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )));
         }
 
         debug!("Image unmounted and loop device cleaned up");
@@ -163,13 +190,13 @@ impl QemuUtils {
         qcow2_path: P,
         target_dir: P,
     ) -> Result<()> {
-        let temp_dir = tempfile::tempdir()
-            .map_err(crate::error::AutoInstallError::IoError)?;
+        let temp_dir = tempfile::tempdir().map_err(crate::error::AutoInstallError::IoError)?;
 
         let raw_path = temp_dir.path().join("image.raw");
         let mount_point = temp_dir.path().join("mount");
 
-        tokio::fs::create_dir_all(&mount_point).await
+        tokio::fs::create_dir_all(&mount_point)
+            .await
             .map_err(crate::error::AutoInstallError::IoError)?;
 
         // Convert to raw
@@ -188,17 +215,21 @@ impl QemuUtils {
             ])
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::ImageError(
-                format!("Failed to copy image contents: {}", e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::ImageError(format!(
+                    "Failed to copy image contents: {}",
+                    e
+                ))
+            })?;
 
         // Cleanup
         let _ = Self::unmount_image(&mount_point, &loop_device).await;
 
         if !output.status.success() {
-            return Err(crate::error::AutoInstallError::ImageError(
-                format!("Content extraction failed: {}", String::from_utf8_lossy(&output.stderr))
-            ));
+            return Err(crate::error::AutoInstallError::ImageError(format!(
+                "Content extraction failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )));
         }
 
         info!("Image contents extracted successfully");

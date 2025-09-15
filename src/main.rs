@@ -5,13 +5,13 @@
 //! Ubuntu AutoInstall Agent - Main entry point
 
 use clap::Parser;
+use tokio::signal;
+use tracing::{info, warn};
 use ubuntu_autoinstall_agent::{
     cli::{args::Cli, commands::*},
     logging::logger,
     Result,
 };
-use tokio::signal;
-use tracing::{info, warn};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -22,7 +22,9 @@ async fn main() -> Result<()> {
 
     // Set up signal handling for graceful shutdown
     let shutdown_signal = async {
-        signal::ctrl_c().await.expect("Failed to install Ctrl+C handler");
+        signal::ctrl_c()
+            .await
+            .expect("Failed to install Ctrl+C handler");
         warn!("Received Ctrl+C, initiating graceful shutdown...");
         cleanup_on_exit().await;
     };
@@ -31,35 +33,51 @@ async fn main() -> Result<()> {
     let command_future = async {
         match cli.command {
             ubuntu_autoinstall_agent::cli::args::Commands::CreateImage {
-                arch, version, output, spec, cache_dir
-            } => {
-                create_image_command(arch.into(), &version, output, spec, cache_dir).await
-            }
+                arch,
+                version,
+                output,
+                spec,
+                cache_dir,
+            } => create_image_command(arch.into(), &version, output, spec, cache_dir).await,
             ubuntu_autoinstall_agent::cli::args::Commands::Deploy {
-                target, config, image, via_ssh, dry_run
-            } => {
-                deploy_command(&target, &config, &image, via_ssh, dry_run).await
-            }
+                target,
+                config,
+                image,
+                via_ssh,
+                dry_run,
+            } => deploy_command(&target, &config, &image, via_ssh, dry_run).await,
             ubuntu_autoinstall_agent::cli::args::Commands::Validate { image } => {
                 validate_command(&image).await
             }
             ubuntu_autoinstall_agent::cli::args::Commands::CheckPrereqs => {
                 check_prerequisites_command().await
             }
-            ubuntu_autoinstall_agent::cli::args::Commands::ListImages {
-                filter_arch, json
-            } => {
+            ubuntu_autoinstall_agent::cli::args::Commands::ListImages { filter_arch, json } => {
                 list_images_command(filter_arch.map(Into::into), json).await
             }
             ubuntu_autoinstall_agent::cli::args::Commands::Cleanup {
-                older_than_days, dry_run
-            } => {
-                cleanup_command(older_than_days, dry_run).await
-            }
+                older_than_days,
+                dry_run,
+            } => cleanup_command(older_than_days, dry_run).await,
             ubuntu_autoinstall_agent::cli::args::Commands::SshInstall {
-                host, hostname, username, investigate_only, dry_run, hold_on_failure, pause_after_storage
+                host,
+                hostname,
+                username,
+                investigate_only,
+                dry_run,
+                hold_on_failure,
+                pause_after_storage,
             } => {
-                ssh_install_command(&host, hostname, username, investigate_only, dry_run, hold_on_failure, pause_after_storage).await
+                ssh_install_command(
+                    &host,
+                    hostname,
+                    username,
+                    investigate_only,
+                    dry_run,
+                    hold_on_failure,
+                    pause_after_storage,
+                )
+                .await
             }
         }
     };

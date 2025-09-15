@@ -4,10 +4,10 @@
 
 //! Disk operations for SSH installation
 
-use tracing::info;
+use super::config::InstallationConfig;
 use crate::network::SshClient;
 use crate::Result;
-use super::config::InstallationConfig;
+use tracing::info;
 
 pub struct DiskManager<'a> {
     ssh: &'a mut SshClient,
@@ -46,14 +46,37 @@ impl<'a> DiskManager<'a> {
     /// - Unmount ZFS filesystems and export/destroy pools (best-effort)
     /// - Close any open LUKS mapper devices
     /// - Wipe the disk GPT and FS signatures
-    pub async fn recover_after_failure_and_wipe(&mut self, config: &InstallationConfig) -> Result<()> {
+    pub async fn recover_after_failure_and_wipe(
+        &mut self,
+        config: &InstallationConfig,
+    ) -> Result<()> {
         info!("Recovery: cleaning up mounts, closing LUKS, exporting ZFS, and wiping disk");
 
         // 1) Unmount common chroot bind mounts and EFI if present
-        let _ = self.log_and_execute("Recovery: umount /mnt/targetos/sys", "umount -lf /mnt/targetos/sys 2>/dev/null || true").await;
-        let _ = self.log_and_execute("Recovery: umount /mnt/targetos/proc", "umount -lf /mnt/targetos/proc 2>/dev/null || true").await;
-        let _ = self.log_and_execute("Recovery: umount /mnt/targetos/dev", "umount -lf /mnt/targetos/dev 2>/dev/null || true").await;
-        let _ = self.log_and_execute("Recovery: umount /mnt/targetos/boot/efi", "umount -lf /mnt/targetos/boot/efi 2>/dev/null || true").await;
+        let _ = self
+            .log_and_execute(
+                "Recovery: umount /mnt/targetos/sys",
+                "umount -lf /mnt/targetos/sys 2>/dev/null || true",
+            )
+            .await;
+        let _ = self
+            .log_and_execute(
+                "Recovery: umount /mnt/targetos/proc",
+                "umount -lf /mnt/targetos/proc 2>/dev/null || true",
+            )
+            .await;
+        let _ = self
+            .log_and_execute(
+                "Recovery: umount /mnt/targetos/dev",
+                "umount -lf /mnt/targetos/dev 2>/dev/null || true",
+            )
+            .await;
+        let _ = self
+            .log_and_execute(
+                "Recovery: umount /mnt/targetos/boot/efi",
+                "umount -lf /mnt/targetos/boot/efi 2>/dev/null || true",
+            )
+            .await;
 
         // 2) Unmount anything still mounted under /mnt/targetos (deepest-first)
         let _ = self.log_and_execute(
@@ -62,22 +85,49 @@ impl<'a> DiskManager<'a> {
         ).await;
 
         // 3) Unmount ZFS filesystems and export pools (best-effort)
-        let _ = self.log_and_execute("Recovery: zfs unmount -a", "zfs unmount -a 2>/dev/null || true").await;
-        let _ = self.log_and_execute("Recovery: zpool export -a", "zpool export -a 2>/dev/null || true").await;
+        let _ = self
+            .log_and_execute(
+                "Recovery: zfs unmount -a",
+                "zfs unmount -a 2>/dev/null || true",
+            )
+            .await;
+        let _ = self
+            .log_and_execute(
+                "Recovery: zpool export -a",
+                "zpool export -a 2>/dev/null || true",
+            )
+            .await;
 
         // As an extra measure, try to destroy common pools if they linger
-        let _ = self.log_and_execute("Recovery: destroy bpool", "zpool destroy bpool 2>/dev/null || true").await;
-        let _ = self.log_and_execute("Recovery: destroy rpool", "zpool destroy rpool 2>/dev/null || true").await;
+        let _ = self
+            .log_and_execute(
+                "Recovery: destroy bpool",
+                "zpool destroy bpool 2>/dev/null || true",
+            )
+            .await;
+        let _ = self
+            .log_and_execute(
+                "Recovery: destroy rpool",
+                "zpool destroy rpool 2>/dev/null || true",
+            )
+            .await;
 
         // 4) Unmount /mnt/luks if mounted
-        let _ = self.log_and_execute(
-            "Recovery: unmount /mnt/luks if mounted",
-            "mountpoint -q /mnt/luks && umount -lf /mnt/luks || true"
-        ).await;
+        let _ = self
+            .log_and_execute(
+                "Recovery: unmount /mnt/luks if mounted",
+                "mountpoint -q /mnt/luks && umount -lf /mnt/luks || true",
+            )
+            .await;
 
         // 5) Close LUKS mapper devices
         // Try the known name first, then any crypt devices discovered under /dev/mapper
-        let _ = self.log_and_execute("Recovery: close luks", "cryptsetup close luks 2>/dev/null || true").await;
+        let _ = self
+            .log_and_execute(
+                "Recovery: close luks",
+                "cryptsetup close luks 2>/dev/null || true",
+            )
+            .await;
         let _ = self.log_and_execute(
             "Recovery: close any crypt mappers",
             "for m in $(ls /dev/mapper 2>/dev/null | grep -E '^(luks|crypt)' || true); do cryptsetup close \"$m\" 2>/dev/null || true; done"
@@ -94,25 +144,35 @@ impl<'a> DiskManager<'a> {
         info!("Cleaning up existing mounts and filesystems");
 
         // Unmount any existing mounts on the target disk
-        let mounted_parts = self.ssh.execute_with_output(&format!(
-            "mount | grep '{}' | awk '{{print $1}}' || true",
-            config.disk_device
-        )).await?;
+        let mounted_parts = self
+            .ssh
+            .execute_with_output(&format!(
+                "mount | grep '{}' | awk '{{print $1}}' || true",
+                config.disk_device
+            ))
+            .await?;
 
         for mount in mounted_parts.lines() {
             if !mount.trim().is_empty() {
                 self.log_and_execute(
                     &format!("Unmounting {}", mount.trim()),
-                    &format!("umount -f {} || true", mount.trim())
-                ).await?;
+                    &format!("umount -f {} || true", mount.trim()),
+                )
+                .await?;
             }
         }
 
         // Close any open LUKS devices
-        self.log_and_execute("Closing LUKS devices", "cryptsetup close luks || true").await?;
+        self.log_and_execute("Closing LUKS devices", "cryptsetup close luks || true")
+            .await?;
 
         // Also unmount /mnt/luks if it is mounted (best-effort)
-        let _ = self.log_and_execute("Unmount /mnt/luks if mounted", "mountpoint -q /mnt/luks && umount -lf /mnt/luks || true").await;
+        let _ = self
+            .log_and_execute(
+                "Unmount /mnt/luks if mounted",
+                "mountpoint -q /mnt/luks && umount -lf /mnt/luks || true",
+            )
+            .await;
 
         Ok(())
     }
@@ -121,14 +181,18 @@ impl<'a> DiskManager<'a> {
     async fn destroy_existing_zfs_pools(&mut self) -> Result<()> {
         info!("Destroying existing ZFS pools");
 
-        let existing_pools = self.ssh.execute_with_output("zpool list -H -o name 2>/dev/null || true").await?;
+        let existing_pools = self
+            .ssh
+            .execute_with_output("zpool list -H -o name 2>/dev/null || true")
+            .await?;
         if !existing_pools.trim().is_empty() {
             for pool in existing_pools.lines() {
                 if !pool.trim().is_empty() {
                     self.log_and_execute(
                         &format!("Destroying ZFS pool: {}", pool.trim()),
-                        &format!("zpool destroy {} || true", pool.trim())
-                    ).await?;
+                        &format!("zpool destroy {} || true", pool.trim()),
+                    )
+                    .await?;
                 }
             }
         }
@@ -140,9 +204,21 @@ impl<'a> DiskManager<'a> {
     async fn wipe_disk(&mut self, config: &InstallationConfig) -> Result<()> {
         info!("Wiping target disk");
 
-        self.log_and_execute("Wiping disk signatures", &format!("wipefs -a {}", config.disk_device)).await?;
-        self.log_and_execute("Discarding blocks", &format!("blkdiscard -f {} || true", config.disk_device)).await?;
-        self.log_and_execute("Zapping GPT structures", &format!("sgdisk --zap-all {}", config.disk_device)).await?;
+        self.log_and_execute(
+            "Wiping disk signatures",
+            &format!("wipefs -a {}", config.disk_device),
+        )
+        .await?;
+        self.log_and_execute(
+            "Discarding blocks",
+            &format!("blkdiscard -f {} || true", config.disk_device),
+        )
+        .await?;
+        self.log_and_execute(
+            "Zapping GPT structures",
+            &format!("sgdisk --zap-all {}", config.disk_device),
+        )
+        .await?;
 
         Ok(())
     }
@@ -158,23 +234,60 @@ impl<'a> DiskManager<'a> {
         // 4: 8309 (Linux LUKS) remainder of disk (RPOOL via LUKS mapper)
 
         // Create new GPT
-        self.log_and_execute("Create new GPT label", &format!("sgdisk -o {}", config.disk_device)).await?;
+        self.log_and_execute(
+            "Create new GPT label",
+            &format!("sgdisk -o {}", config.disk_device),
+        )
+        .await?;
 
         // Partition 1: EFI System, 512MiB starting at sector 2048 (~1MiB)
-        self.log_and_execute("Create ESP (p1)", &format!("sgdisk -n 1:2048:+512M -t 1:EF00 -c 1:'EFI System Partition' {}", config.disk_device)).await?;
+        self.log_and_execute(
+            "Create ESP (p1)",
+            &format!(
+                "sgdisk -n 1:2048:+512M -t 1:EF00 -c 1:'EFI System Partition' {}",
+                config.disk_device
+            ),
+        )
+        .await?;
 
         // Partition 2: RESET ext4, 4GiB
-        self.log_and_execute("Create RESET (p2)", &format!("sgdisk -n 2:0:+4G -t 2:8300 -c 2:'RESET' {}", config.disk_device)).await?;
+        self.log_and_execute(
+            "Create RESET (p2)",
+            &format!(
+                "sgdisk -n 2:0:+4G -t 2:8300 -c 2:'RESET' {}",
+                config.disk_device
+            ),
+        )
+        .await?;
 
         // Partition 3: BPOOL, 2GiB, ZFS boot pool type
-        self.log_and_execute("Create BPOOL (p3)", &format!("sgdisk -n 3:0:+2G -t 3:BE00 -c 3:'BPOOL' {}", config.disk_device)).await?;
+        self.log_and_execute(
+            "Create BPOOL (p3)",
+            &format!(
+                "sgdisk -n 3:0:+2G -t 3:BE00 -c 3:'BPOOL' {}",
+                config.disk_device
+            ),
+        )
+        .await?;
 
         // Partition 4: LUKS, rest of disk
-        self.log_and_execute("Create LUKS (p4)", &format!("sgdisk -n 4:0:0 -t 4:8309 -c 4:'LUKS' {}", config.disk_device)).await?;
+        self.log_and_execute(
+            "Create LUKS (p4)",
+            &format!(
+                "sgdisk -n 4:0:0 -t 4:8309 -c 4:'LUKS' {}",
+                config.disk_device
+            ),
+        )
+        .await?;
 
         // Inform the kernel of partition table changes
-        self.log_and_execute("Reload partition table", &format!("partprobe {} || true", config.disk_device)).await?;
-        self.log_and_execute("Settle udev", "udevadm settle || true").await?;
+        self.log_and_execute(
+            "Reload partition table",
+            &format!("partprobe {} || true", config.disk_device),
+        )
+        .await?;
+        self.log_and_execute("Settle udev", "udevadm settle || true")
+            .await?;
 
         Ok(())
     }
@@ -184,8 +297,16 @@ impl<'a> DiskManager<'a> {
         info!("Formatting partitions");
 
         // Format ESP and RESET partitions
-        self.log_and_execute("Formatting ESP (vfat)", &format!("mkfs.vfat -F32 -n ESP {}p1", config.disk_device)).await?;
-        self.log_and_execute("Formatting RESET (ext4)", &format!("mkfs.ext4 -F -L RESET {}p2", config.disk_device)).await?;
+        self.log_and_execute(
+            "Formatting ESP (vfat)",
+            &format!("mkfs.vfat -F32 -n ESP {}p1", config.disk_device),
+        )
+        .await?;
+        self.log_and_execute(
+            "Formatting RESET (ext4)",
+            &format!("mkfs.ext4 -F -L RESET {}p2", config.disk_device),
+        )
+        .await?;
 
         Ok(())
     }
@@ -195,10 +316,22 @@ impl<'a> DiskManager<'a> {
         info!("Setting up LUKS encryption");
 
         // Setup LUKS encryption
-        self.log_and_execute("Setting up LUKS encryption",
-            &format!("echo '{}' | cryptsetup luksFormat --batch-mode {}p4", config.luks_key, config.disk_device)).await?;
-        self.log_and_execute("Opening LUKS device",
-            &format!("echo '{}' | cryptsetup open {}p4 luks", config.luks_key, config.disk_device)).await?;
+        self.log_and_execute(
+            "Setting up LUKS encryption",
+            &format!(
+                "echo '{}' | cryptsetup luksFormat --batch-mode {}p4",
+                config.luks_key, config.disk_device
+            ),
+        )
+        .await?;
+        self.log_and_execute(
+            "Opening LUKS device",
+            &format!(
+                "echo '{}' | cryptsetup open {}p4 luks",
+                config.luks_key, config.disk_device
+            ),
+        )
+        .await?;
         // Do not create a filesystem on the LUKS-mapped device; it will back the ZFS rpool.
 
         Ok(())
@@ -213,7 +346,10 @@ impl<'a> DiskManager<'a> {
     // --- Test helpers (pure builders) ---
     #[cfg(test)]
     fn build_sgdisk_esp(disk: &str) -> String {
-        format!("sgdisk -n 1:2048:+512M -t 1:EF00 -c 1:'EFI System Partition' {}", disk)
+        format!(
+            "sgdisk -n 1:2048:+512M -t 1:EF00 -c 1:'EFI System Partition' {}",
+            disk
+        )
     }
 
     #[cfg(test)]
@@ -256,7 +392,13 @@ mod tests {
 
     #[test]
     fn test_format_commands() {
-        assert_eq!(DiskManager::build_mkfs_esp("/dev/nvme0n1"), "mkfs.vfat -F32 -n ESP /dev/nvme0n1p1");
-        assert_eq!(DiskManager::build_mkfs_reset("/dev/nvme0n1"), "mkfs.ext4 -F -L RESET /dev/nvme0n1p2");
+        assert_eq!(
+            DiskManager::build_mkfs_esp("/dev/nvme0n1"),
+            "mkfs.vfat -F32 -n ESP /dev/nvme0n1p1"
+        );
+        assert_eq!(
+            DiskManager::build_mkfs_reset("/dev/nvme0n1"),
+            "mkfs.ext4 -F -L RESET /dev/nvme0n1p2"
+        );
     }
 }

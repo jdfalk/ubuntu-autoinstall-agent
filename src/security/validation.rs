@@ -4,8 +4,8 @@
 
 //! Input validation utilities
 
-use std::net::IpAddr;
 use crate::Result;
+use std::net::IpAddr;
 
 /// Utility functions for input validation
 pub struct ValidationUtils;
@@ -15,27 +15,30 @@ impl ValidationUtils {
     pub fn validate_hostname(hostname: &str) -> Result<()> {
         if hostname.is_empty() {
             return Err(crate::error::AutoInstallError::ValidationError(
-                "Hostname cannot be empty".to_string()
+                "Hostname cannot be empty".to_string(),
             ));
         }
 
         if hostname.len() > 253 {
             return Err(crate::error::AutoInstallError::ValidationError(
-                "Hostname cannot exceed 253 characters".to_string()
+                "Hostname cannot exceed 253 characters".to_string(),
             ));
         }
 
         // Check for valid characters
-        if !hostname.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.') {
+        if !hostname
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.')
+        {
             return Err(crate::error::AutoInstallError::ValidationError(
-                "Hostname contains invalid characters".to_string()
+                "Hostname contains invalid characters".to_string(),
             ));
         }
 
         // Cannot start or end with hyphen
         if hostname.starts_with('-') || hostname.ends_with('-') {
             return Err(crate::error::AutoInstallError::ValidationError(
-                "Hostname cannot start or end with hyphen".to_string()
+                "Hostname cannot start or end with hyphen".to_string(),
             ));
         }
 
@@ -44,30 +47,35 @@ impl ValidationUtils {
 
     /// Validate IP address format
     pub fn validate_ip_address(ip: &str) -> Result<()> {
-        ip.parse::<IpAddr>()
-            .map_err(|_| crate::error::AutoInstallError::ValidationError(
-                format!("Invalid IP address format: {}", ip)
-            ))?;
+        ip.parse::<IpAddr>().map_err(|_| {
+            crate::error::AutoInstallError::ValidationError(format!(
+                "Invalid IP address format: {}",
+                ip
+            ))
+        })?;
         Ok(())
     }
 
     /// Validate disk device path
     pub fn validate_disk_device(device: &str) -> Result<()> {
         if !device.starts_with("/dev/") {
-            return Err(crate::error::AutoInstallError::ValidationError(
-                format!("Invalid disk device path: {}", device)
-            ));
+            return Err(crate::error::AutoInstallError::ValidationError(format!(
+                "Invalid disk device path: {}",
+                device
+            )));
         }
 
         // Check for common device patterns
-        let valid_patterns = [
-            "/dev/sd", "/dev/nvme", "/dev/hd", "/dev/vd", "/dev/xvd"
-        ];
+        let valid_patterns = ["/dev/sd", "/dev/nvme", "/dev/hd", "/dev/vd", "/dev/xvd"];
 
-        if !valid_patterns.iter().any(|pattern| device.starts_with(pattern)) {
-            return Err(crate::error::AutoInstallError::ValidationError(
-                format!("Unrecognized disk device type: {}", device)
-            ));
+        if !valid_patterns
+            .iter()
+            .any(|pattern| device.starts_with(pattern))
+        {
+            return Err(crate::error::AutoInstallError::ValidationError(format!(
+                "Unrecognized disk device type: {}",
+                device
+            )));
         }
 
         Ok(())
@@ -77,29 +85,37 @@ impl ValidationUtils {
     pub fn validate_ssh_key(key: &str) -> Result<()> {
         if key.is_empty() {
             return Err(crate::error::AutoInstallError::ValidationError(
-                "SSH key cannot be empty".to_string()
+                "SSH key cannot be empty".to_string(),
             ));
         }
 
         let parts: Vec<&str> = key.split_whitespace().collect();
         if parts.len() < 2 {
             return Err(crate::error::AutoInstallError::ValidationError(
-                "SSH key format is invalid".to_string()
+                "SSH key format is invalid".to_string(),
             ));
         }
 
         // Check key type
-        let valid_types = ["ssh-rsa", "ssh-dss", "ssh-ed25519", "ecdsa-sha2-nistp256", "ecdsa-sha2-nistp384", "ecdsa-sha2-nistp521"];
+        let valid_types = [
+            "ssh-rsa",
+            "ssh-dss",
+            "ssh-ed25519",
+            "ecdsa-sha2-nistp256",
+            "ecdsa-sha2-nistp384",
+            "ecdsa-sha2-nistp521",
+        ];
         if !valid_types.contains(&parts[0]) {
-            return Err(crate::error::AutoInstallError::ValidationError(
-                format!("Unsupported SSH key type: {}", parts[0])
-            ));
+            return Err(crate::error::AutoInstallError::ValidationError(format!(
+                "Unsupported SSH key type: {}",
+                parts[0]
+            )));
         }
 
         // Basic base64 validation for key data
         if parts[1].len() < 10 {
             return Err(crate::error::AutoInstallError::ValidationError(
-                "SSH key data appears too short".to_string()
+                "SSH key data appears too short".to_string(),
             ));
         }
 
@@ -110,36 +126,43 @@ impl ValidationUtils {
     pub fn validate_username(username: &str) -> Result<()> {
         if username.is_empty() {
             return Err(crate::error::AutoInstallError::ValidationError(
-                "Username cannot be empty".to_string()
+                "Username cannot be empty".to_string(),
             ));
         }
 
         if username.len() > 32 {
             return Err(crate::error::AutoInstallError::ValidationError(
-                "Username cannot exceed 32 characters".to_string()
+                "Username cannot exceed 32 characters".to_string(),
             ));
         }
 
         // Must start with letter or underscore
         if !username.chars().next().unwrap().is_ascii_lowercase() && !username.starts_with('_') {
             return Err(crate::error::AutoInstallError::ValidationError(
-                "Username must start with lowercase letter or underscore".to_string()
+                "Username must start with lowercase letter or underscore".to_string(),
             ));
         }
 
         // Only lowercase letters, digits, hyphens, and underscores
-        if !username.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_') {
+        if !username
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+        {
             return Err(crate::error::AutoInstallError::ValidationError(
-                "Username contains invalid characters".to_string()
+                "Username contains invalid characters".to_string(),
             ));
         }
 
         // Reserved usernames
-        let reserved = ["root", "bin", "daemon", "sys", "sync", "games", "man", "lp", "mail", "news", "uucp", "proxy", "www-data", "backup", "list", "irc", "gnats", "nobody"];
+        let reserved = [
+            "root", "bin", "daemon", "sys", "sync", "games", "man", "lp", "mail", "news", "uucp",
+            "proxy", "www-data", "backup", "list", "irc", "gnats", "nobody",
+        ];
         if reserved.contains(&username) {
-            return Err(crate::error::AutoInstallError::ValidationError(
-                format!("Username '{}' is reserved", username)
-            ));
+            return Err(crate::error::AutoInstallError::ValidationError(format!(
+                "Username '{}' is reserved",
+                username
+            )));
         }
 
         Ok(())
@@ -151,19 +174,30 @@ impl ValidationUtils {
         // this would check against a comprehensive timezone database
         if timezone.is_empty() {
             return Err(crate::error::AutoInstallError::ValidationError(
-                "Timezone cannot be empty".to_string()
+                "Timezone cannot be empty".to_string(),
             ));
         }
 
         // Check for common timezone patterns
         let valid_patterns = [
-            "UTC", "GMT", "America/", "Europe/", "Asia/", "Africa/", "Australia/", "Pacific/"
+            "UTC",
+            "GMT",
+            "America/",
+            "Europe/",
+            "Asia/",
+            "Africa/",
+            "Australia/",
+            "Pacific/",
         ];
 
-        if !valid_patterns.iter().any(|pattern| timezone.starts_with(pattern)) {
-            return Err(crate::error::AutoInstallError::ValidationError(
-                format!("Invalid timezone format: {}", timezone)
-            ));
+        if !valid_patterns
+            .iter()
+            .any(|pattern| timezone.starts_with(pattern))
+        {
+            return Err(crate::error::AutoInstallError::ValidationError(format!(
+                "Invalid timezone format: {}",
+                timezone
+            )));
         }
 
         Ok(())
@@ -173,22 +207,26 @@ impl ValidationUtils {
     pub fn validate_interface_name(interface: &str) -> Result<()> {
         if interface.is_empty() {
             return Err(crate::error::AutoInstallError::ValidationError(
-                "Interface name cannot be empty".to_string()
+                "Interface name cannot be empty".to_string(),
             ));
         }
 
         if interface.len() > 15 {
             return Err(crate::error::AutoInstallError::ValidationError(
-                "Interface name cannot exceed 15 characters".to_string()
+                "Interface name cannot exceed 15 characters".to_string(),
             ));
         }
 
         // Common interface name patterns
         let valid_patterns = ["eth", "wlan", "lo", "br", "bond", "vlan"];
-        if !valid_patterns.iter().any(|pattern| interface.starts_with(pattern)) {
-            return Err(crate::error::AutoInstallError::ValidationError(
-                format!("Unrecognized interface name pattern: {}", interface)
-            ));
+        if !valid_patterns
+            .iter()
+            .any(|pattern| interface.starts_with(pattern))
+        {
+            return Err(crate::error::AutoInstallError::ValidationError(format!(
+                "Unrecognized interface name pattern: {}",
+                interface
+            )));
         }
 
         Ok(())

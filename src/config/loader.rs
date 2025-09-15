@@ -4,12 +4,12 @@
 
 //! Configuration file loading and environment variable substitution
 
-use std::path::Path;
-use std::fs;
-use std::collections::HashMap;
-use regex::Regex;
+use super::{ImageSpec, TargetConfig};
 use crate::Result;
-use super::{TargetConfig, ImageSpec};
+use regex::Regex;
+use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
 
 /// Configuration loader with environment variable substitution
 pub struct ConfigLoader {
@@ -26,42 +26,47 @@ impl ConfigLoader {
 
     /// Load target configuration from YAML file
     pub fn load_target_config<P: AsRef<Path>>(&self, path: P) -> Result<TargetConfig> {
-        let content = fs::read_to_string(&path)
-            .map_err(|e| crate::error::AutoInstallError::ConfigError(
-                format!("Failed to read target config file {}: {}", path.as_ref().display(), e)
-            ))?;
+        let content = fs::read_to_string(&path).map_err(|e| {
+            crate::error::AutoInstallError::ConfigError(format!(
+                "Failed to read target config file {}: {}",
+                path.as_ref().display(),
+                e
+            ))
+        })?;
 
         let expanded = self.expand_env_vars(&content)?;
         let config: TargetConfig = serde_yaml::from_str(&expanded)?;
-        
+
         // Validate configuration
         config.validate()?;
-        
+
         Ok(config)
     }
 
     /// Load image specification from YAML file
     pub fn load_image_spec<P: AsRef<Path>>(&self, path: P) -> Result<ImageSpec> {
-        let content = fs::read_to_string(&path)
-            .map_err(|e| crate::error::AutoInstallError::ConfigError(
-                format!("Failed to read image spec file {}: {}", path.as_ref().display(), e)
-            ))?;
+        let content = fs::read_to_string(&path).map_err(|e| {
+            crate::error::AutoInstallError::ConfigError(format!(
+                "Failed to read image spec file {}: {}",
+                path.as_ref().display(),
+                e
+            ))
+        })?;
 
         let expanded = self.expand_env_vars(&content)?;
         let spec: ImageSpec = serde_yaml::from_str(&expanded)?;
-        
+
         // Validate specification
         spec.validate()?;
-        
+
         Ok(spec)
     }
 
     /// Expand environment variables in configuration content
     fn expand_env_vars(&self, content: &str) -> Result<String> {
-        let re = Regex::new(r"\$\{([^}]+)\}")
-            .map_err(|e| crate::error::AutoInstallError::ConfigError(
-                format!("Invalid regex pattern: {}", e)
-            ))?;
+        let re = Regex::new(r"\$\{([^}]+)\}").map_err(|e| {
+            crate::error::AutoInstallError::ConfigError(format!("Invalid regex pattern: {}", e))
+        })?;
 
         let mut result = content.to_string();
         let mut missing_vars = Vec::new();
@@ -78,9 +83,10 @@ impl ConfigLoader {
         }
 
         if !missing_vars.is_empty() {
-            return Err(crate::error::AutoInstallError::ConfigError(
-                format!("Missing environment variables: {}", missing_vars.join(", "))
-            ));
+            return Err(crate::error::AutoInstallError::ConfigError(format!(
+                "Missing environment variables: {}",
+                missing_vars.join(", ")
+            )));
         }
 
         Ok(result)
@@ -93,10 +99,9 @@ impl ConfigLoader {
 
     /// Check if required environment variables are set
     pub fn check_required_env_vars(&self, config_content: &str) -> Result<Vec<String>> {
-        let re = Regex::new(r"\$\{([^}]+)\}")
-            .map_err(|e| crate::error::AutoInstallError::ConfigError(
-                format!("Invalid regex pattern: {}", e)
-            ))?;
+        let re = Regex::new(r"\$\{([^}]+)\}").map_err(|e| {
+            crate::error::AutoInstallError::ConfigError(format!("Invalid regex pattern: {}", e))
+        })?;
 
         let mut required_vars = Vec::new();
         let mut missing_vars = Vec::new();
@@ -112,9 +117,10 @@ impl ConfigLoader {
         }
 
         if !missing_vars.is_empty() {
-            return Err(crate::error::AutoInstallError::ConfigError(
-                format!("Missing required environment variables: {}", missing_vars.join(", "))
-            ));
+            return Err(crate::error::AutoInstallError::ConfigError(format!(
+                "Missing required environment variables: {}",
+                missing_vars.join(", ")
+            )));
         }
 
         Ok(required_vars)
@@ -130,8 +136,8 @@ impl Default for ConfigLoader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
     use std::io::Write;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn test_env_var_expansion() {
@@ -147,16 +153,21 @@ mod tests {
     fn test_missing_env_var() {
         let loader = ConfigLoader::new();
         let content = "key: ${MISSING_VAR}";
-        
+
         let result = loader.expand_env_vars(content);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Missing environment variables"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Missing environment variables"));
     }
 
     #[test]
     fn test_load_target_config() -> Result<()> {
         let mut file = NamedTempFile::new().unwrap();
-        writeln!(file, r#"
+        writeln!(
+            file,
+            r#"
 hostname: test-server
 architecture: amd64
 disk_device: /dev/sda
@@ -178,15 +189,17 @@ luks_config:
   hash: sha256
 packages:
   - openssh-server
-"#).unwrap();
+"#
+        )
+        .unwrap();
 
         let loader = ConfigLoader::new();
         let config = loader.load_target_config(file.path())?;
-        
+
         assert_eq!(config.hostname, "test-server");
         assert_eq!(config.users.len(), 1);
         assert!(config.users[0].sudo);
-        
+
         Ok(())
     }
 }

@@ -4,8 +4,8 @@
 
 //! Image customization for target-specific modifications
 
-use std::path::Path;
 use crate::{config::TargetConfig, Result};
+use std::path::Path;
 
 /// Customizer for applying target-specific modifications to images
 pub struct ImageCustomizer;

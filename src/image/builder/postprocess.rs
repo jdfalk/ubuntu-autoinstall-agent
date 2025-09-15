@@ -4,13 +4,13 @@
 
 //! Image post-processing: generalization and finalization
 
+use crate::config::ImageSpec;
+use crate::Result;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::fs;
 use tokio::process::Command;
 use tracing::{info, warn};
-use crate::config::ImageSpec;
-use crate::Result;
 
 /// Image post-processing manager
 pub struct PostProcessor {
@@ -21,7 +21,10 @@ pub struct PostProcessor {
 impl PostProcessor {
     /// Create a new post-processor
     pub fn new(work_dir: PathBuf, cache_dir: PathBuf) -> Self {
-        Self { work_dir, cache_dir }
+        Self {
+            work_dir,
+            cache_dir,
+        }
     }
 
     /// Generalize the image (remove machine-specific data)
@@ -33,7 +36,8 @@ impl PostProcessor {
         fs::create_dir_all(&mount_point).await?;
 
         // Use guestfish to modify the image
-        let script = format!(r#"
+        let script = format!(
+            r#"
 add {}
 run
 mount /dev/sda2 /
@@ -56,27 +60,36 @@ touch /etc/machine-id
 
 sync
 umount-all
-"#, vm_disk.display());
+"#,
+            vm_disk.display()
+        );
 
         let output = Command::new("guestfish")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| crate::error::AutoInstallError::ImageError(
-                format!("Failed to start guestfish: {}", e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::ImageError(format!(
+                    "Failed to start guestfish: {}",
+                    e
+                ))
+            })?;
 
         // Write script to stdin and wait for completion
         let mut child = output;
         if let Some(stdin) = child.stdin.take() {
-            tokio::io::AsyncWriteExt::write_all(&mut tokio::io::BufWriter::new(stdin), script.as_bytes()).await?;
+            tokio::io::AsyncWriteExt::write_all(
+                &mut tokio::io::BufWriter::new(stdin),
+                script.as_bytes(),
+            )
+            .await?;
         }
 
         let result = child.wait().await?;
         if !result.success() {
             return Err(crate::error::AutoInstallError::ImageError(
-                "Image generalization failed".to_string()
+                "Image generalization failed".to_string(),
             ));
         }
 
@@ -85,7 +98,12 @@ umount-all
     }
 
     /// Finalize and compress the image
-    pub async fn finalize_image(&self, vm_disk: &Path, output_path: Option<String>, spec: &ImageSpec) -> Result<PathBuf> {
+    pub async fn finalize_image(
+        &self,
+        vm_disk: &Path,
+        output_path: Option<String>,
+        spec: &ImageSpec,
+    ) -> Result<PathBuf> {
         info!("Finalizing image");
 
         let final_path = if let Some(output) = output_path {
@@ -93,18 +111,22 @@ umount-all
         } else {
             // Create images directory in cache
             let images_dir = self.cache_dir.join("images");
-            fs::create_dir_all(&images_dir).await
+            fs::create_dir_all(&images_dir)
+                .await
                 .map_err(crate::error::AutoInstallError::IoError)?;
 
-            images_dir.join(format!("ubuntu-{}-{}-{}.qcow2",
-                                  spec.ubuntu_version,
-                                  spec.architecture.as_str(),
-                                  chrono::Utc::now().format("%Y%m%d-%H%M%S")))
+            images_dir.join(format!(
+                "ubuntu-{}-{}-{}.qcow2",
+                spec.ubuntu_version,
+                spec.architecture.as_str(),
+                chrono::Utc::now().format("%Y%m%d-%H%M%S")
+            ))
         };
 
         // Ensure output directory exists
         if let Some(parent) = final_path.parent() {
-            fs::create_dir_all(parent).await
+            fs::create_dir_all(parent)
+                .await
                 .map_err(crate::error::AutoInstallError::IoError)?;
         }
 
@@ -112,21 +134,26 @@ umount-all
         let output = Command::new("qemu-img")
             .args([
                 "convert",
-                "-c",  // Compress
-                "-O", "qcow2",
+                "-c", // Compress
+                "-O",
+                "qcow2",
                 vm_disk.to_str().unwrap(),
                 final_path.to_str().unwrap(),
             ])
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::ImageError(
-                format!("Failed to compress image: {}", e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::ImageError(format!(
+                    "Failed to compress image: {}",
+                    e
+                ))
+            })?;
 
         if !output.status.success() {
-            return Err(crate::error::AutoInstallError::ImageError(
-                format!("Image compression failed: {}", String::from_utf8_lossy(&output.stderr))
-            ));
+            return Err(crate::error::AutoInstallError::ImageError(format!(
+                "Image compression failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )));
         }
 
         // Calculate checksum for integrity verification
@@ -134,7 +161,8 @@ umount-all
         info!("Image checksum (SHA256): {}", checksum);
 
         // Get image size
-        let metadata = fs::metadata(&final_path).await
+        let metadata = fs::metadata(&final_path)
+            .await
             .map_err(crate::error::AutoInstallError::IoError)?;
         let size_bytes = metadata.len();
 
@@ -152,24 +180,30 @@ umount-all
             warn!("Failed to register image in database: {}", e);
         }
 
-        info!("Image compressed to: {} ({})", final_path.display(),
-              Self::format_size(size_bytes));
+        info!(
+            "Image compressed to: {} ({})",
+            final_path.display(),
+            Self::format_size(size_bytes)
+        );
         Ok(final_path)
     }
 
     /// Calculate SHA256 checksum of image file
     async fn calculate_image_checksum(&self, image_path: &Path) -> Result<String> {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         use tokio::io::AsyncReadExt;
 
-        let mut file = tokio::fs::File::open(image_path).await
+        let mut file = tokio::fs::File::open(image_path)
+            .await
             .map_err(crate::error::AutoInstallError::IoError)?;
 
         let mut hasher = Sha256::new();
         let mut buffer = [0u8; 8192];
 
         loop {
-            let bytes_read = file.read(&mut buffer).await
+            let bytes_read = file
+                .read(&mut buffer)
+                .await
                 .map_err(crate::error::AutoInstallError::IoError)?;
 
             if bytes_read == 0 {

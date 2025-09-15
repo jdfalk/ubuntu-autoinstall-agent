@@ -10,4 +10,4 @@ pub mod ssh_installer;
 
 pub use download::NetworkDownloader;
 pub use ssh::SshClient;
-pub use ssh_installer::{SshInstaller, InstallationConfig, SystemInfo};
+pub use ssh_installer::{InstallationConfig, SshInstaller, SystemInfo};

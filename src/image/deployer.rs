@@ -4,13 +4,13 @@
 
 //! Image deployment via SSH and netboot
 
-use std::path::Path;
-use tracing::{debug, info};
 use crate::config::TargetConfig;
 use crate::network::SshClient;
 use crate::security::LuksManager;
 use crate::utils::QemuUtils;
 use crate::Result;
+use std::path::Path;
+use tracing::{debug, info};
 
 /// Deployer for golden images to target machines
 pub struct ImageDeployer {
@@ -26,7 +26,12 @@ impl ImageDeployer {
     }
 
     /// Deploy image via SSH to target machine
-    pub async fn deploy_via_ssh(&self, target: &str, config: &TargetConfig, golden_image_path: &Path) -> Result<()> {
+    pub async fn deploy_via_ssh(
+        &self,
+        target: &str,
+        config: &TargetConfig,
+        golden_image_path: &Path,
+    ) -> Result<()> {
         info!("Deploying via SSH to: {}", target);
 
         // Connect to target machine
@@ -36,10 +41,12 @@ impl ImageDeployer {
         let connection_result = ssh.connect(target, "root").await;
         if connection_result.is_err() {
             info!("Failed to connect as root, trying with rescue user...");
-            ssh.connect(target, "rescue").await
-                .map_err(|e| crate::error::AutoInstallError::SshError(
-                    format!("Failed to connect to target {}: {}. Ensure target is booted into rescue mode.", target, e)
-                ))?;
+            ssh.connect(target, "rescue").await.map_err(|e| {
+                crate::error::AutoInstallError::SshError(format!(
+                    "Failed to connect to target {}: {}. Ensure target is booted into rescue mode.",
+                    target, e
+                ))
+            })?;
         }
 
         info!("Connected to target machine. Checking system status...");
@@ -51,7 +58,8 @@ impl ImageDeployer {
         self.setup_luks_disk(&mut ssh, config).await?;
 
         // Download and deploy image
-        self.deploy_image_to_disk(&mut ssh, config, golden_image_path).await?;
+        self.deploy_image_to_disk(&mut ssh, config, golden_image_path)
+            .await?;
 
         // Configure bootloader
         self.configure_bootloader(&mut ssh, config).await?;
@@ -70,7 +78,7 @@ impl ImageDeployer {
         // This would implement PXE boot deployment
         // For now, return an error as this is a complex implementation
         Err(crate::error::AutoInstallError::NetworkError(
-            "Netboot deployment not yet implemented".to_string()
+            "Netboot deployment not yet implemented".to_string(),
         ))
     }
 
@@ -79,21 +87,26 @@ impl ImageDeployer {
         info!("Verifying rescue environment");
 
         // Check if we can access necessary tools
-        ssh.execute("command -v cryptsetup").await
-            .map_err(|_| crate::error::AutoInstallError::SshError(
-                "cryptsetup not available in rescue environment".to_string()
-            ))?;
+        ssh.execute("command -v cryptsetup").await.map_err(|_| {
+            crate::error::AutoInstallError::SshError(
+                "cryptsetup not available in rescue environment".to_string(),
+            )
+        })?;
 
-        ssh.execute("command -v mkfs.ext4").await
-            .map_err(|_| crate::error::AutoInstallError::SshError(
-                "filesystem tools not available in rescue environment".to_string()
-            ))?;
+        ssh.execute("command -v mkfs.ext4").await.map_err(|_| {
+            crate::error::AutoInstallError::SshError(
+                "filesystem tools not available in rescue environment".to_string(),
+            )
+        })?;
 
         // Ensure no mounted filesystems from target disk
-        let mounted = ssh.execute_with_output("mount | grep '/dev/sd' || true").await?;
+        let mounted = ssh
+            .execute_with_output("mount | grep '/dev/sd' || true")
+            .await?;
         if !mounted.trim().is_empty() {
             info!("Unmounting existing filesystems...");
-            ssh.execute("umount -l /dev/sd* 2>/dev/null || true").await?;
+            ssh.execute("umount -l /dev/sd* 2>/dev/null || true")
+                .await?;
         }
 
         debug!("Rescue environment verification completed");
@@ -105,14 +118,13 @@ impl ImageDeployer {
         info!("Setting up LUKS encryption on {}", config.disk_device);
 
         // Wipe the disk
-        ssh.execute(&format!("wipefs -a {}", config.disk_device)).await?;
+        ssh.execute(&format!("wipefs -a {}", config.disk_device))
+            .await?;
 
         // Create LUKS partition
-        self.luks_manager.create_luks_partition(
-            ssh,
-            &config.disk_device,
-            &config.luks_config,
-        ).await?;
+        self.luks_manager
+            .create_luks_partition(ssh, &config.disk_device, &config.luks_config)
+            .await?;
 
         // Create filesystem
         let luks_device = "/dev/mapper/ubuntu-root";
@@ -123,7 +135,12 @@ impl ImageDeployer {
     }
 
     /// Deploy image to encrypted disk
-    async fn deploy_image_to_disk(&self, ssh: &mut SshClient, _config: &TargetConfig, golden_image_path: &Path) -> Result<()> {
+    async fn deploy_image_to_disk(
+        &self,
+        ssh: &mut SshClient,
+        _config: &TargetConfig,
+        golden_image_path: &Path,
+    ) -> Result<()> {
         info!("Deploying golden image to encrypted disk");
 
         let mount_point = "/mnt/target";
@@ -131,10 +148,12 @@ impl ImageDeployer {
 
         // Mount the encrypted filesystem
         ssh.execute(&format!("mkdir -p {}", mount_point)).await?;
-        ssh.execute(&format!("mount {} {}", luks_device, mount_point)).await?;
+        ssh.execute(&format!("mount {} {}", luks_device, mount_point))
+            .await?;
 
         // Extract golden image to target
-        self.extract_golden_image(ssh, golden_image_path, mount_point).await?;
+        self.extract_golden_image(ssh, golden_image_path, mount_point)
+            .await?;
 
         // Unmount
         ssh.execute(&format!("umount {}", mount_point)).await?;
@@ -144,27 +163,32 @@ impl ImageDeployer {
     }
 
     /// Extract golden image to target filesystem
-    async fn extract_golden_image(&self, ssh: &mut SshClient, golden_image: &Path, target_mount: &str) -> Result<()> {
+    async fn extract_golden_image(
+        &self,
+        ssh: &mut SshClient,
+        golden_image: &Path,
+        target_mount: &str,
+    ) -> Result<()> {
         info!("Extracting golden image to target");
 
         // Use QemuUtils for efficient image extraction
         QemuUtils::extract_image_contents(golden_image, std::path::Path::new(target_mount)).await?;
 
         // Set up proper ownership and permissions
-        ssh.execute(&format!(
-            "chown -R root:root {}",
-            target_mount
-        )).await?;
+        ssh.execute(&format!("chown -R root:root {}", target_mount))
+            .await?;
 
         // Ensure boot directory has correct permissions
         ssh.execute(&format!(
             "chmod 755 {}/boot {}/etc {}/var",
             target_mount, target_mount, target_mount
-        )).await?;
+        ))
+        .await?;
 
         info!("Golden image extraction completed");
         Ok(())
-    }    /// Configure bootloader for LUKS
+    }
+    /// Configure bootloader for LUKS
     async fn configure_bootloader(&self, ssh: &mut SshClient, config: &TargetConfig) -> Result<()> {
         info!("Configuring bootloader");
 
@@ -172,12 +196,16 @@ impl ImageDeployer {
         let luks_device = "/dev/mapper/ubuntu-root";
 
         // Remount for configuration
-        ssh.execute(&format!("mount {} {}", luks_device, mount_point)).await?;
+        ssh.execute(&format!("mount {} {}", luks_device, mount_point))
+            .await?;
 
         // Mount special filesystems
-        ssh.execute(&format!("mount --bind /dev {}/dev", mount_point)).await?;
-        ssh.execute(&format!("mount --bind /proc {}/proc", mount_point)).await?;
-        ssh.execute(&format!("mount --bind /sys {}/sys", mount_point)).await?;
+        ssh.execute(&format!("mount --bind /dev {}/dev", mount_point))
+            .await?;
+        ssh.execute(&format!("mount --bind /proc {}/proc", mount_point))
+            .await?;
+        ssh.execute(&format!("mount --bind /sys {}/sys", mount_point))
+            .await?;
 
         // Update GRUB configuration for LUKS
         let grub_config = format!(
@@ -188,24 +216,22 @@ impl ImageDeployer {
         ssh.execute(&format!(
             "echo '{}' >> {}/etc/default/grub",
             grub_config, mount_point
-        )).await?;
+        ))
+        .await?;
 
         // Install and configure GRUB
         ssh.execute(&format!(
             "chroot {} grub-install {}",
             mount_point, config.disk_device
-        )).await?;
+        ))
+        .await?;
 
-        ssh.execute(&format!(
-            "chroot {} update-grub",
-            mount_point
-        )).await?;
+        ssh.execute(&format!("chroot {} update-grub", mount_point))
+            .await?;
 
         // Update initramfs for LUKS support
-        ssh.execute(&format!(
-            "chroot {} update-initramfs -u",
-            mount_point
-        )).await?;
+        ssh.execute(&format!("chroot {} update-initramfs -u", mount_point))
+            .await?;
 
         // Cleanup mounts
         ssh.execute(&format!("umount {}/sys", mount_point)).await?;
@@ -225,13 +251,15 @@ impl ImageDeployer {
         let luks_device = "/dev/mapper/ubuntu-root";
 
         // Remount for customization
-        ssh.execute(&format!("mount {} {}", luks_device, mount_point)).await?;
+        ssh.execute(&format!("mount {} {}", luks_device, mount_point))
+            .await?;
 
         // Set hostname
         ssh.execute(&format!(
             "echo '{}' > {}/etc/hostname",
             config.hostname, mount_point
-        )).await?;
+        ))
+        .await?;
 
         // Configure network
         self.configure_network(ssh, config, mount_point).await?;
@@ -248,7 +276,8 @@ impl ImageDeployer {
         ssh.execute(&format!(
             "chroot {} ln -sf /usr/share/zoneinfo/{} /etc/localtime",
             mount_point, config.timezone
-        )).await?;
+        ))
+        .await?;
 
         ssh.execute(&format!("umount {}", mount_point)).await?;
 
@@ -257,9 +286,15 @@ impl ImageDeployer {
     }
 
     /// Configure network settings
-    async fn configure_network(&self, ssh: &mut SshClient, config: &TargetConfig, mount_point: &str) -> Result<()> {
+    async fn configure_network(
+        &self,
+        ssh: &mut SshClient,
+        config: &TargetConfig,
+        mount_point: &str,
+    ) -> Result<()> {
         let netplan_config = if config.network.dhcp {
-            format!(r#"
+            format!(
+                r#"
 network:
   version: 2
   ethernets:
@@ -267,9 +302,13 @@ network:
       dhcp4: true
       nameservers:
         addresses: [{}]
-"#, config.network.interface, config.network.dns_servers.join(", "))
+"#,
+                config.network.interface,
+                config.network.dns_servers.join(", ")
+            )
         } else {
-            format!(r#"
+            format!(
+                r#"
 network:
   version: 2
   ethernets:
@@ -289,27 +328,35 @@ network:
         ssh.execute(&format!(
             "cat > {}/etc/netplan/01-netcfg.yaml << 'EOF'\n{}\nEOF",
             mount_point, netplan_config
-        )).await?;
+        ))
+        .await?;
 
         Ok(())
     }
 
     /// Create user accounts
-    async fn create_users(&self, ssh: &mut SshClient, config: &TargetConfig, mount_point: &str) -> Result<()> {
+    async fn create_users(
+        &self,
+        ssh: &mut SshClient,
+        config: &TargetConfig,
+        mount_point: &str,
+    ) -> Result<()> {
         for user in &config.users {
             // Create user
             let shell = user.shell.as_deref().unwrap_or("/bin/bash");
             ssh.execute(&format!(
                 "chroot {} useradd -m -s {} {}",
                 mount_point, shell, user.name
-            )).await?;
+            ))
+            .await?;
 
             // Add to sudo group if needed
             if user.sudo {
                 ssh.execute(&format!(
                     "chroot {} usermod -aG sudo {}",
                     mount_point, user.name
-                )).await?;
+                ))
+                .await?;
             }
 
             // Setup SSH keys
@@ -318,19 +365,19 @@ network:
                 ssh.execute(&format!("mkdir -p {}", ssh_dir)).await?;
 
                 for key in &user.ssh_keys {
-                    ssh.execute(&format!(
-                        "echo '{}' >> {}/authorized_keys",
-                        key, ssh_dir
-                    )).await?;
+                    ssh.execute(&format!("echo '{}' >> {}/authorized_keys", key, ssh_dir))
+                        .await?;
                 }
 
                 ssh.execute(&format!(
                     "chroot {} chown -R {}:{} /home/{}/.ssh",
                     mount_point, user.name, user.name, user.name
-                )).await?;
+                ))
+                .await?;
 
                 ssh.execute(&format!("chmod 700 {}", ssh_dir)).await?;
-                ssh.execute(&format!("chmod 600 {}/authorized_keys", ssh_dir)).await?;
+                ssh.execute(&format!("chmod 600 {}/authorized_keys", ssh_dir))
+                    .await?;
             }
         }
 
@@ -338,20 +385,24 @@ network:
     }
 
     /// Install additional packages
-    async fn install_packages(&self, ssh: &mut SshClient, config: &TargetConfig, mount_point: &str) -> Result<()> {
+    async fn install_packages(
+        &self,
+        ssh: &mut SshClient,
+        config: &TargetConfig,
+        mount_point: &str,
+    ) -> Result<()> {
         let packages = config.packages.join(" ");
 
         // Update package lists
-        ssh.execute(&format!(
-            "chroot {} apt update",
-            mount_point
-        )).await?;
+        ssh.execute(&format!("chroot {} apt update", mount_point))
+            .await?;
 
         // Install packages
         ssh.execute(&format!(
             "chroot {} apt install -y {}",
             mount_point, packages
-        )).await?;
+        ))
+        .await?;
 
         Ok(())
     }

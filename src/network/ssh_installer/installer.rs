@@ -4,16 +4,16 @@
 
 //! Main SSH installer orchestrating all installation phases
 
-use std::collections::HashMap;
-use tracing::{info, error};
-use crate::network::SshClient;
-use crate::Result;
 use super::config::{InstallationConfig, SystemInfo};
+use super::disk_ops::DiskManager;
 use super::investigation::SystemInvestigator;
 use super::packages::PackageManager;
-use super::disk_ops::DiskManager;
-use super::zfs_ops::ZfsManager;
 use super::system_setup::SystemConfigurator;
+use super::zfs_ops::ZfsManager;
+use crate::network::SshClient;
+use crate::Result;
+use std::collections::HashMap;
+use tracing::{error, info};
 
 /// SSH-based installer for Ubuntu with ZFS and LUKS
 pub struct SshInstaller {
@@ -33,18 +33,23 @@ impl SshInstaller {
     }
 
     /// Perform installation with additional options (e.g., hold-on-failure, pause-after-storage)
-    pub async fn perform_installation_with_options_and_pause(&mut self, config: &InstallationConfig, hold_on_failure: bool, pause_after_storage: bool) -> Result<()> {
+    pub async fn perform_installation_with_options_and_pause(
+        &mut self,
+        config: &InstallationConfig,
+        hold_on_failure: bool,
+        pause_after_storage: bool,
+    ) -> Result<()> {
         if !hold_on_failure && !pause_after_storage {
             return self.perform_installation(config).await;
         }
 
         if !self.connected {
             return Err(crate::error::AutoInstallError::SshError(
-                "Not connected to target system".to_string()
+                "Not connected to target system".to_string(),
             ));
         }
 
-    info!("Starting full ZFS + LUKS installation for {} (hold-on-failure={}, pause-after-storage={})", config.hostname, hold_on_failure, pause_after_storage);
+        info!("Starting full ZFS + LUKS installation for {} (hold-on-failure={}, pause-after-storage={})", config.hostname, hold_on_failure, pause_after_storage);
 
         let mut failed_phases: Vec<String> = Vec::new();
         let mut successful_phases: Vec<&str> = Vec::new();
@@ -60,7 +65,9 @@ impl SshInstaller {
         // Phase 0: Setup installation variables
         if let Err(e) = self.setup_installation_variables(config).await {
             failed_phases.push(format!("Phase 0: Setup variables - {}", e));
-            return self.enter_hold_mode("Phase 0 failed", &successful_phases, &failed_phases).await;
+            return self
+                .enter_hold_mode("Phase 0 failed", &successful_phases, &failed_phases)
+                .await;
         } else {
             successful_phases.push("Phase 0: Setup variables");
         }
@@ -68,7 +75,9 @@ impl SshInstaller {
         // Phase 1: Package installation
         if let Err(e) = self.phase_1_package_installation().await {
             failed_phases.push(format!("Phase 1: Package installation - {}", e));
-            return self.enter_hold_mode("Phase 1 failed", &successful_phases, &failed_phases).await;
+            return self
+                .enter_hold_mode("Phase 1 failed", &successful_phases, &failed_phases)
+                .await;
         } else {
             successful_phases.push("Phase 1: Package installation");
         }
@@ -76,7 +85,9 @@ impl SshInstaller {
         // Phase 2: Disk preparation
         if let Err(e) = self.phase_2_disk_preparation(config).await {
             failed_phases.push(format!("Phase 2: Disk preparation - {}", e));
-            return self.enter_hold_mode("Phase 2 failed", &successful_phases, &failed_phases).await;
+            return self
+                .enter_hold_mode("Phase 2 failed", &successful_phases, &failed_phases)
+                .await;
         } else {
             successful_phases.push("Phase 2: Disk preparation");
         }
@@ -84,7 +95,9 @@ impl SshInstaller {
         // Phase 3: ZFS pool creation
         if let Err(e) = self.phase_3_zfs_creation(config).await {
             failed_phases.push(format!("Phase 3: ZFS creation - {}", e));
-            return self.enter_hold_mode("Phase 3 failed", &successful_phases, &failed_phases).await;
+            return self
+                .enter_hold_mode("Phase 3 failed", &successful_phases, &failed_phases)
+                .await;
         } else {
             successful_phases.push("Phase 3: ZFS creation");
         }
@@ -92,13 +105,21 @@ impl SshInstaller {
         // Optional pause after storage creation to allow manual verification and steps
         if pause_after_storage {
             self.print_next_commands_after_storage(config).await?;
-            return self.enter_hold_mode("Paused after storage per user request", &successful_phases, &failed_phases).await;
+            return self
+                .enter_hold_mode(
+                    "Paused after storage per user request",
+                    &successful_phases,
+                    &failed_phases,
+                )
+                .await;
         }
 
         // Phase 4: Base system installation
         if let Err(e) = self.phase_4_base_system(config).await {
             failed_phases.push(format!("Phase 4: Base system - {}", e));
-            return self.enter_hold_mode("Phase 4 failed", &successful_phases, &failed_phases).await;
+            return self
+                .enter_hold_mode("Phase 4 failed", &successful_phases, &failed_phases)
+                .await;
         } else {
             successful_phases.push("Phase 4: Base system");
         }
@@ -106,7 +127,9 @@ impl SshInstaller {
         // Phase 5: System configuration
         if let Err(e) = self.phase_5_system_configuration(config).await {
             failed_phases.push(format!("Phase 5: System configuration - {}", e));
-            return self.enter_hold_mode("Phase 5 failed", &successful_phases, &failed_phases).await;
+            return self
+                .enter_hold_mode("Phase 5 failed", &successful_phases, &failed_phases)
+                .await;
         } else {
             successful_phases.push("Phase 5: System configuration");
         }
@@ -114,35 +137,55 @@ impl SshInstaller {
         // Phase 6: Final setup — in hold mode we still want to complete when all previous phases succeeded
         if let Err(e) = self.phase_6_final_setup(config).await {
             failed_phases.push(format!("Phase 6: Final setup - {}", e));
-            return self.enter_hold_mode("Phase 6 failed", &successful_phases, &failed_phases).await;
+            return self
+                .enter_hold_mode("Phase 6 failed", &successful_phases, &failed_phases)
+                .await;
         } else {
             successful_phases.push("Phase 6: Final setup");
         }
 
         // All good
-        self.generate_installation_report(&successful_phases, &failed_phases).await;
-        info!("🎉 Installation completed successfully for {}", config.hostname);
+        self.generate_installation_report(&successful_phases, &failed_phases)
+            .await;
+        info!(
+            "🎉 Installation completed successfully for {}",
+            config.hostname
+        );
         Ok(())
     }
 
     /// Print the next commands that would be executed post-storage so the user can run them manually
-    async fn print_next_commands_after_storage(&mut self, config: &InstallationConfig) -> Result<()> {
+    async fn print_next_commands_after_storage(
+        &mut self,
+        config: &InstallationConfig,
+    ) -> Result<()> {
         use tracing::warn;
         warn!("=== PAUSE AFTER STORAGE REQUESTED ===");
         warn!("The installer has completed: partitioning, formatting (ESP/ext4), LUKS setup, and ZFS pools/datasets.");
         warn!("The next commands that would be executed are listed below. You can run them manually on the target.");
 
         let cmds = build_next_commands_after_storage(config);
-        for c in cmds { warn!("  {}", c); }
+        for c in cmds {
+            warn!("  {}", c);
+        }
         warn!("=== END OF NEXT COMMANDS ===");
         Ok(())
     }
 
     /// Enter hold mode: stop immediately, write logs, generate report, and keep SSH session open
-    async fn enter_hold_mode(&mut self, reason: &str, successful_phases: &[&str], failed_phases: &[String]) -> Result<()> {
-        error!("🔒 Hold-on-failure is enabled — stopping immediately: {}", reason);
+    async fn enter_hold_mode(
+        &mut self,
+        reason: &str,
+        successful_phases: &[&str],
+        failed_phases: &[String],
+    ) -> Result<()> {
+        error!(
+            "🔒 Hold-on-failure is enabled — stopping immediately: {}",
+            reason
+        );
         self.collect_and_log_debug_info().await;
-        self.generate_installation_report(successful_phases, failed_phases).await;
+        self.generate_installation_report(successful_phases, failed_phases)
+            .await;
 
         // IMPORTANT: Do NOT cleanup/unmount/export anything here — leave the system as-is
         // Keep the SSH session alive for live debugging by running a long-lived no-op on the target
@@ -151,7 +194,7 @@ impl SshInstaller {
         let _ = self.ssh.execute(keepalive_cmd).await;
 
         Err(crate::error::AutoInstallError::InstallationError(
-            "Installation halted due to failure (hold-on-failure)".to_string()
+            "Installation halted due to failure (hold-on-failure)".to_string(),
         ))
     }
 
@@ -167,7 +210,7 @@ impl SshInstaller {
     pub async fn investigate_system(&mut self) -> Result<SystemInfo> {
         if !self.connected {
             return Err(crate::error::AutoInstallError::SshError(
-                "Not connected to target system".to_string()
+                "Not connected to target system".to_string(),
             ));
         }
 
@@ -179,11 +222,14 @@ impl SshInstaller {
     pub async fn perform_installation(&mut self, config: &InstallationConfig) -> Result<()> {
         if !self.connected {
             return Err(crate::error::AutoInstallError::SshError(
-                "Not connected to target system".to_string()
+                "Not connected to target system".to_string(),
             ));
         }
 
-        info!("Starting full ZFS + LUKS installation for {}", config.hostname);
+        info!(
+            "Starting full ZFS + LUKS installation for {}",
+            config.hostname
+        );
 
         let mut failed_phases = Vec::new();
         let mut successful_phases = Vec::new();
@@ -293,20 +339,28 @@ impl SshInstaller {
         }
 
         // Generate comprehensive installation report
-        self.generate_installation_report(&successful_phases, &failed_phases).await;
+        self.generate_installation_report(&successful_phases, &failed_phases)
+            .await;
 
         if failed_phases.is_empty() {
-            info!("🎉 Installation completed successfully for {}", config.hostname);
+            info!(
+                "🎉 Installation completed successfully for {}",
+                config.hostname
+            );
             Ok(())
         } else {
-            error!("❌ Installation completed with {} failed phases out of 6 total phases", failed_phases.len());
+            error!(
+                "❌ Installation completed with {} failed phases out of 6 total phases",
+                failed_phases.len()
+            );
             error!("💡 SSH session remains active for manual debugging and investigation");
             error!("💡 You can inspect logs, retry specific phases, or analyze the system state");
 
             // Don't disconnect - let the user investigate
-            Err(crate::error::AutoInstallError::InstallationError(
-                format!("Installation failed: {} phases failed", failed_phases.len())
-            ))
+            Err(crate::error::AutoInstallError::InstallationError(format!(
+                "Installation failed: {} phases failed",
+                failed_phases.len()
+            )))
         }
     }
 
@@ -315,22 +369,38 @@ impl SshInstaller {
         info!("Running preflight checks");
 
         // 1) Basic network connectivity
-        let ping_status = self.ssh.execute("ping -c 1 -w 2 1.1.1.1 >/dev/null 2>&1 || ping -c 1 -w 2 8.8.8.8 >/dev/null 2>&1").await;
+        let ping_status = self
+            .ssh
+            .execute(
+                "ping -c 1 -w 2 1.1.1.1 >/dev/null 2>&1 || ping -c 1 -w 2 8.8.8.8 >/dev/null 2>&1",
+            )
+            .await;
         if ping_status.is_err() {
-            return Err(crate::error::AutoInstallError::ValidationError("No basic network connectivity (ICMP)".to_string()));
+            return Err(crate::error::AutoInstallError::ValidationError(
+                "No basic network connectivity (ICMP)".to_string(),
+            ));
         }
 
         // 2) Check debootstrap mirror reachability
         let release = config.debootstrap_release.as_deref().unwrap_or("plucky");
-        let mirror = config.debootstrap_mirror.as_deref().unwrap_or("http://archive.ubuntu.com/ubuntu/");
+        let mirror = config
+            .debootstrap_mirror
+            .as_deref()
+            .unwrap_or("http://archive.ubuntu.com/ubuntu/");
         let release_url = format!("{}/dists/{}/Release", mirror.trim_end_matches('/'), release);
         let head_cmd = format!("curl -fsI '{}' >/dev/null", release_url);
         if self.ssh.execute(&head_cmd).await.is_err() {
             // Try old-releases as backup if not already
-            let fallback_url = format!("http://old-releases.ubuntu.com/ubuntu/dists/{}/Release", release);
+            let fallback_url = format!(
+                "http://old-releases.ubuntu.com/ubuntu/dists/{}/Release",
+                release
+            );
             let fallback_cmd = format!("curl -fsI '{}' >/dev/null", fallback_url);
             if self.ssh.execute(&fallback_cmd).await.is_err() {
-                return Err(crate::error::AutoInstallError::ValidationError(format!("Debootstrap mirror not reachable for {}", release)));
+                return Err(crate::error::AutoInstallError::ValidationError(format!(
+                    "Debootstrap mirror not reachable for {}",
+                    release
+                )));
             } else {
                 info!("Mirror check: primary unreachable; old-releases is reachable");
             }
@@ -339,24 +409,54 @@ impl SshInstaller {
         // 3) Ensure target mount path is sane
         // Create if missing, and warn if non-empty
         self.ssh.execute("mkdir -p /mnt/targetos").await?;
-        let non_empty_check = self.ssh.execute("test -z \"$(ls -A /mnt/targetos 2>/dev/null)\"").await;
+        let non_empty_check = self
+            .ssh
+            .execute("test -z \"$(ls -A /mnt/targetos 2>/dev/null)\"")
+            .await;
         if non_empty_check.is_err() {
             info!("Preflight: /mnt/targetos is not empty; installation will proceed carefully");
         }
 
         // 4) Detect existing pools to avoid duplicate creation
-    let has_bpool = self.ssh.check_silent("zpool list -H bpool >/dev/null 2>&1").await.unwrap_or(false);
-    let has_rpool = self.ssh.check_silent("zpool list -H rpool >/dev/null 2>&1").await.unwrap_or(false);
+        let has_bpool = self
+            .ssh
+            .check_silent("zpool list -H bpool >/dev/null 2>&1")
+            .await
+            .unwrap_or(false);
+        let has_rpool = self
+            .ssh
+            .check_silent("zpool list -H rpool >/dev/null 2>&1")
+            .await
+            .unwrap_or(false);
         if has_bpool || has_rpool {
-            info!("Preflight: existing pools detected: bpool={} rpool={}", has_bpool, has_rpool);
+            info!(
+                "Preflight: existing pools detected: bpool={} rpool={}",
+                has_bpool, has_rpool
+            );
         }
 
         // 5) LUKS and residual mounts check; recover if needed
-    let luks_active = self.ssh.check_silent("cryptsetup status luks >/dev/null 2>&1").await.unwrap_or(false);
-    let luks_mounted = false; // we do not mount the LUKS mapper as a filesystem
-        let target_has_mounts = self.ssh.check_silent("mount | grep -q '/mnt/targetos' ").await.unwrap_or(false);
-        let pools_exist = self.ssh.check_silent("zpool list -H bpool >/dev/null 2>&1").await.unwrap_or(false) ||
-            self.ssh.check_silent("zpool list -H rpool >/dev/null 2>&1").await.unwrap_or(false);
+        let luks_active = self
+            .ssh
+            .check_silent("cryptsetup status luks >/dev/null 2>&1")
+            .await
+            .unwrap_or(false);
+        let luks_mounted = false; // we do not mount the LUKS mapper as a filesystem
+        let target_has_mounts = self
+            .ssh
+            .check_silent("mount | grep -q '/mnt/targetos' ")
+            .await
+            .unwrap_or(false);
+        let pools_exist = self
+            .ssh
+            .check_silent("zpool list -H bpool >/dev/null 2>&1")
+            .await
+            .unwrap_or(false)
+            || self
+                .ssh
+                .check_silent("zpool list -H rpool >/dev/null 2>&1")
+                .await
+                .unwrap_or(false);
 
         if luks_active || luks_mounted || target_has_mounts || pools_exist {
             info!("Preflight: residual state detected (luks_active={}, luks_mounted={}, target_mounts={}, pools_exist={}); attempting recovery/reset",
@@ -389,16 +489,37 @@ impl SshInstaller {
                 let remote_dir = "/var/tmp/uaalogs";
                 let remote_path = format!("{}/install-debug-{}.log", remote_dir, ts);
                 let _ = self.ssh.execute(&format!("mkdir -p {}", remote_dir)).await;
-                let _ = self.ssh.execute(&format!(
-                    "bash -lc 'cat > {} <<\'EOF\'\n{}\nEOF'",
-                    remote_path, debug_info.replace("'", "'\\''")
-                )).await;
+                let _ = self
+                    .ssh
+                    .execute(&format!(
+                        "bash -lc 'cat > {} <<\'EOF\'\n{}\nEOF'",
+                        remote_path,
+                        debug_info.replace("'", "'\\''")
+                    ))
+                    .await;
 
                 // Download to local logs folder
-                let base_dir = std::env::current_dir().ok().map(|p| p.display().to_string()).unwrap_or_else(|| ".".to_string());
-                let local_dir = format!("{}/logs/{}", base_dir, self.variables.get("HOSTNAME").cloned().unwrap_or_else(|| "unknown-host".to_string()));
+                let base_dir = std::env::current_dir()
+                    .ok()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| ".".to_string());
+                let local_dir = format!(
+                    "{}/logs/{}",
+                    base_dir,
+                    self.variables
+                        .get("HOSTNAME")
+                        .cloned()
+                        .unwrap_or_else(|| "unknown-host".to_string())
+                );
                 let _ = std::fs::create_dir_all(&local_dir);
-                let local_path = format!("{}/{}", local_dir, std::path::Path::new(&remote_path).file_name().unwrap().to_string_lossy());
+                let local_path = format!(
+                    "{}/{}",
+                    local_dir,
+                    std::path::Path::new(&remote_path)
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                );
                 if let Err(e) = self.ssh.download_file(&remote_path, &local_path).await {
                     error!("Failed to download debug log: {}", e);
                 } else {
@@ -412,7 +533,11 @@ impl SshInstaller {
     }
 
     /// Generate comprehensive installation report
-    async fn generate_installation_report(&mut self, successful_phases: &[&str], failed_phases: &[String]) {
+    async fn generate_installation_report(
+        &mut self,
+        successful_phases: &[&str],
+        failed_phases: &[String],
+    ) {
         info!("=== INSTALLATION REPORT ===");
         info!("Total phases: 6");
         info!("Successful phases: {}", successful_phases.len());
@@ -458,7 +583,9 @@ impl SshInstaller {
         self.ssh.execute("systemctl stop zed || true").await?;
 
         // Configure timezone
-        self.ssh.execute(&format!("timedatectl set-timezone {}", config.timezone)).await?;
+        self.ssh
+            .execute(&format!("timedatectl set-timezone {}", config.timezone))
+            .await?;
         self.ssh.execute("timedatectl set-ntp on").await?;
 
         // Set environment variables
@@ -475,13 +602,17 @@ impl SshInstaller {
         ];
 
         for (key, value) in vars {
-            self.ssh.execute(&format!("export {}='{}'", key, value)).await?;
+            self.ssh
+                .execute(&format!("export {}='{}'", key, value))
+                .await?;
             self.variables.insert(key.to_string(), value.to_string());
         }
 
         // Set nameservers array
         let nameservers = config.network_nameservers.join(" ");
-        self.ssh.execute(&format!("export NET_ET_NAMESERVERS=({})", nameservers)).await?;
+        self.ssh
+            .execute(&format!("export NET_ET_NAMESERVERS=({})", nameservers))
+            .await?;
 
         Ok(())
     }
@@ -557,7 +688,10 @@ impl SshInstaller {
         system_configurator.final_cleanup(config).await?;
 
         info!("Phase 6 completed: Final setup and cleanup");
-        info!("Installation of {} completed successfully!", config.hostname);
+        info!(
+            "Installation of {} completed successfully!",
+            config.hostname
+        );
         Ok(())
     }
 }
@@ -668,23 +802,54 @@ mod tests {
         let cmds = build_next_commands_after_storage(&cfg);
 
         // Presence checks
-        assert!(cmds.iter().any(|c| c.starts_with("debootstrap plucky /mnt/targetos http://archive.ubuntu.com/ubuntu/")));
-        assert!(cmds.iter().any(|c| c.contains("ubuntu.sources") && c.contains("Suites: plucky")));
-        assert!(cmds.iter().any(|c| c.contains("apt install") && c.contains("dosfstools")));
+        assert!(cmds.iter().any(
+            |c| c.starts_with("debootstrap plucky /mnt/targetos http://archive.ubuntu.com/ubuntu/")
+        ));
+        assert!(cmds
+            .iter()
+            .any(|c| c.contains("ubuntu.sources") && c.contains("Suites: plucky")));
+        assert!(cmds
+            .iter()
+            .any(|c| c.contains("apt install") && c.contains("dosfstools")));
         assert!(cmds.iter().any(|c| c.contains("apt purge -y os-prober")));
-        assert!(cmds.iter().any(|c| c.contains("echo \"luks ") && c.contains("none luks,discard,initramfs")));
-        assert!(cmds.iter().any(|c| c.contains("grub-install") && !c.contains("no-nvram") && !c.contains("removable")));
-        assert!(cmds.iter().any(|c| c.contains("grub-install") && c.contains("--no-nvram")));
-        assert!(cmds.iter().any(|c| c.contains("grub-install") && c.contains("--removable")));
+        assert!(cmds
+            .iter()
+            .any(|c| c.contains("echo \"luks ") && c.contains("none luks,discard,initramfs")));
+        assert!(cmds.iter().any(|c| c.contains("grub-install")
+            && !c.contains("no-nvram")
+            && !c.contains("removable")));
+        assert!(cmds
+            .iter()
+            .any(|c| c.contains("grub-install") && c.contains("--no-nvram")));
+        assert!(cmds
+            .iter()
+            .any(|c| c.contains("grub-install") && c.contains("--removable")));
         assert!(cmds.iter().any(|c| c.contains("update-grub")));
 
         // Ordering: mounts -> efivars -> apt install -> grub
-        let idx_mount_dev = cmds.iter().position(|c| c == "mount --rbind /dev /mnt/targetos/dev").unwrap();
+        let idx_mount_dev = cmds
+            .iter()
+            .position(|c| c == "mount --rbind /dev /mnt/targetos/dev")
+            .unwrap();
         let idx_efivarfs = cmds.iter().position(|c| c.contains("efivarfs")).unwrap();
-        let idx_apt_install = cmds.iter().position(|c| c.contains("apt install -y")).unwrap();
-        let idx_grub = cmds.iter().position(|c| c.contains("grub-install") && !c.contains("no-nvram") && !c.contains("removable")).unwrap();
-        assert!(idx_mount_dev < idx_efivarfs, "chroot mounts should come before efivarfs");
-        assert!(idx_efivarfs < idx_apt_install, "efivarfs before apt install");
+        let idx_apt_install = cmds
+            .iter()
+            .position(|c| c.contains("apt install -y"))
+            .unwrap();
+        let idx_grub = cmds
+            .iter()
+            .position(|c| {
+                c.contains("grub-install") && !c.contains("no-nvram") && !c.contains("removable")
+            })
+            .unwrap();
+        assert!(
+            idx_mount_dev < idx_efivarfs,
+            "chroot mounts should come before efivarfs"
+        );
+        assert!(
+            idx_efivarfs < idx_apt_install,
+            "efivarfs before apt install"
+        );
         assert!(idx_apt_install < idx_grub, "apt install before grub");
     }
 
@@ -692,8 +857,13 @@ mod tests {
     fn test_build_next_commands_honors_release_override() {
         let cfg = sample_config_with_release(Some("noble"));
         let cmds = build_next_commands_after_storage(&cfg);
-        assert!(cmds.iter().any(|c| c.starts_with("debootstrap noble /mnt/targetos http://archive.ubuntu.com/ubuntu/")));
-        assert!(cmds.iter().any(|c| c.contains("ubuntu.sources") && c.contains("Suites: noble")));
+        assert!(cmds
+            .iter()
+            .any(|c| c
+                .starts_with("debootstrap noble /mnt/targetos http://archive.ubuntu.com/ubuntu/")));
+        assert!(cmds
+            .iter()
+            .any(|c| c.contains("ubuntu.sources") && c.contains("Suites: noble")));
         assert!(cmds.iter().any(|c| c.contains("Suites: noble-security")));
     }
 }

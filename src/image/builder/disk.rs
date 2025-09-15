@@ -4,10 +4,10 @@
 
 //! Disk creation and management functionality
 
+use crate::Result;
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
 use tracing::debug;
-use crate::Result;
 
 /// Disk management operations
 pub struct DiskManager {
@@ -25,20 +25,25 @@ impl DiskManager {
         let output = Command::new("qemu-img")
             .args([
                 "create",
-                "-f", "qcow2",
+                "-f",
+                "qcow2",
                 disk_path.to_str().unwrap(),
                 &format!("{}G", size_gb),
             ])
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::VmError(
-                format!("Failed to create QEMU disk: {}", e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::VmError(format!(
+                    "Failed to create QEMU disk: {}",
+                    e
+                ))
+            })?;
 
         if !output.status.success() {
-            return Err(crate::error::AutoInstallError::VmError(
-                format!("qemu-img failed: {}", String::from_utf8_lossy(&output.stderr))
-            ));
+            return Err(crate::error::AutoInstallError::VmError(format!(
+                "qemu-img failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )));
         }
 
         debug!("Created QEMU disk: {}", disk_path.display());

@@ -4,10 +4,10 @@
 
 //! SSH client for remote deployment operations
 
-use std::net::TcpStream;
-use ssh2::Session;
 use crate::Result;
-use tracing::{info, debug, error};
+use ssh2::Session;
+use std::net::TcpStream;
+use tracing::{debug, error, info};
 
 /// SSH client for remote operations
 pub struct SshClient {
@@ -28,27 +28,33 @@ impl SshClient {
     pub async fn connect(&mut self, host: &str, username: &str) -> Result<()> {
         info!("Connecting to {} as {}", host, username);
 
-        let tcp = TcpStream::connect(format!("{}:22", host))
-            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to connect to {}: {}", host, e)))?;
+        let tcp = TcpStream::connect(format!("{}:22", host)).map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!(
+                "Failed to connect to {}: {}",
+                host, e
+            ))
+        })?;
 
-        let mut session = Session::new()
-            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to create SSH session: {}", e)))?;
+        let mut session = Session::new().map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to create SSH session: {}", e))
+        })?;
 
         session.set_tcp_stream(tcp);
-        session.handshake()
-            .map_err(|e| crate::error::AutoInstallError::SshError(format!("SSH handshake failed: {}", e)))?;
+        session.handshake().map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("SSH handshake failed: {}", e))
+        })?;
 
         // Try key-based authentication first
         if session.userauth_agent(username).is_err() {
             // Fall back to asking for password (in a real implementation)
             return Err(crate::error::AutoInstallError::SshError(
-                "SSH authentication failed - no valid key found".to_string()
+                "SSH authentication failed - no valid key found".to_string(),
             ));
         }
 
         if !session.authenticated() {
             return Err(crate::error::AutoInstallError::SshError(
-                "SSH authentication failed".to_string()
+                "SSH authentication failed".to_string(),
             ));
         }
 
@@ -63,34 +69,45 @@ impl SshClient {
     pub async fn execute(&mut self, command: &str) -> Result<()> {
         debug!("Executing command: {}", command);
 
-        let session = self.session.as_mut()
-            .ok_or_else(|| crate::error::AutoInstallError::SshError("No active SSH session".to_string()))?;
+        let session = self.session.as_mut().ok_or_else(|| {
+            crate::error::AutoInstallError::SshError("No active SSH session".to_string())
+        })?;
 
-        let mut channel = session.channel_session()
-            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to create SSH channel: {}", e)))?;
+        let mut channel = session.channel_session().map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to create SSH channel: {}", e))
+        })?;
 
-        channel.exec(command)
-            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to execute command: {}", e)))?;
+        channel.exec(command).map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to execute command: {}", e))
+        })?;
 
         let mut stdout = String::new();
         let mut stderr = String::new();
 
         // Read stdout and stderr
-        channel.read_to_string(&mut stdout)
-            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to read stdout: {}", e)))?;
-        channel.stderr().read_to_string(&mut stderr)
-            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to read stderr: {}", e)))?;
+        channel.read_to_string(&mut stdout).map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to read stdout: {}", e))
+        })?;
+        channel.stderr().read_to_string(&mut stderr).map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to read stderr: {}", e))
+        })?;
 
-        channel.wait_close()
-            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to close SSH channel: {}", e)))?;
+        channel.wait_close().map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to close SSH channel: {}", e))
+        })?;
 
-        let exit_status = channel.exit_status()
-            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to get exit status: {}", e)))?;
+        let exit_status = channel.exit_status().map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to get exit status: {}", e))
+        })?;
 
         if exit_status != 0 {
             error!("Command failed with exit code {}", exit_status);
-            if !stdout.trim().is_empty() { error!("STDOUT: {}", stdout); }
-            if !stderr.trim().is_empty() { error!("STDERR: {}", stderr); }
+            if !stdout.trim().is_empty() {
+                error!("STDOUT: {}", stdout);
+            }
+            if !stderr.trim().is_empty() {
+                error!("STDERR: {}", stderr);
+            }
             return Err(crate::error::AutoInstallError::ProcessError {
                 command: command.to_string(),
                 exit_code: Some(exit_status),
@@ -106,33 +123,44 @@ impl SshClient {
     pub async fn execute_with_output(&mut self, command: &str) -> Result<String> {
         debug!("Executing command with output: {}", command);
 
-        let session = self.session.as_mut()
-            .ok_or_else(|| crate::error::AutoInstallError::SshError("No active SSH session".to_string()))?;
+        let session = self.session.as_mut().ok_or_else(|| {
+            crate::error::AutoInstallError::SshError("No active SSH session".to_string())
+        })?;
 
-        let mut channel = session.channel_session()
-            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to create SSH channel: {}", e)))?;
+        let mut channel = session.channel_session().map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to create SSH channel: {}", e))
+        })?;
 
-        channel.exec(command)
-            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to execute command: {}", e)))?;
+        channel.exec(command).map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to execute command: {}", e))
+        })?;
 
         let mut stdout = String::new();
         let mut stderr = String::new();
 
-        channel.read_to_string(&mut stdout)
-            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to read stdout: {}", e)))?;
-        channel.stderr().read_to_string(&mut stderr)
-            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to read stderr: {}", e)))?;
+        channel.read_to_string(&mut stdout).map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to read stdout: {}", e))
+        })?;
+        channel.stderr().read_to_string(&mut stderr).map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to read stderr: {}", e))
+        })?;
 
-        channel.wait_close()
-            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to close SSH channel: {}", e)))?;
+        channel.wait_close().map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to close SSH channel: {}", e))
+        })?;
 
-        let exit_status = channel.exit_status()
-            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to get exit status: {}", e)))?;
+        let exit_status = channel.exit_status().map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to get exit status: {}", e))
+        })?;
 
         if exit_status != 0 {
             error!("Command failed with exit code {}", exit_status);
-            if !stdout.trim().is_empty() { error!("STDOUT: {}", stdout); }
-            if !stderr.trim().is_empty() { error!("STDERR: {}", stderr); }
+            if !stdout.trim().is_empty() {
+                error!("STDOUT: {}", stdout);
+            }
+            if !stderr.trim().is_empty() {
+                error!("STDERR: {}", stderr);
+            }
             return Err(crate::error::AutoInstallError::ProcessError {
                 command: command.to_string(),
                 exit_code: Some(exit_status),
@@ -145,37 +173,51 @@ impl SshClient {
     }
 
     /// Execute command with detailed error reporting but don't fail the session
-    pub async fn execute_with_error_collection(&mut self, command: &str, description: &str) -> Result<(i32, String, String)> {
+    pub async fn execute_with_error_collection(
+        &mut self,
+        command: &str,
+        description: &str,
+    ) -> Result<(i32, String, String)> {
         info!("Executing: {} -> {}", description, command);
 
-        let session = self.session.as_mut()
-            .ok_or_else(|| crate::error::AutoInstallError::SshError("No active SSH session".to_string()))?;
+        let session = self.session.as_mut().ok_or_else(|| {
+            crate::error::AutoInstallError::SshError("No active SSH session".to_string())
+        })?;
 
-        let mut channel = session.channel_session()
-            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to create SSH channel: {}", e)))?;
+        let mut channel = session.channel_session().map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to create SSH channel: {}", e))
+        })?;
 
-        channel.exec(command)
-            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to execute command: {}", e)))?;
+        channel.exec(command).map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to execute command: {}", e))
+        })?;
 
         let mut stdout = String::new();
         let mut stderr = String::new();
 
         // Read stdout
-        channel.read_to_string(&mut stdout)
-            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to read stdout: {}", e)))?;
+        channel.read_to_string(&mut stdout).map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to read stdout: {}", e))
+        })?;
 
         // Read stderr
-        channel.stderr().read_to_string(&mut stderr)
-            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to read stderr: {}", e)))?;
+        channel.stderr().read_to_string(&mut stderr).map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to read stderr: {}", e))
+        })?;
 
-        channel.wait_close()
-            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to close SSH channel: {}", e)))?;
+        channel.wait_close().map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to close SSH channel: {}", e))
+        })?;
 
-        let exit_status = channel.exit_status()
-            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to get exit status: {}", e)))?;
+        let exit_status = channel.exit_status().map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to get exit status: {}", e))
+        })?;
 
         if exit_status != 0 {
-            error!("Command '{}' failed with exit code {}", description, exit_status);
+            error!(
+                "Command '{}' failed with exit code {}",
+                description, exit_status
+            );
             error!("STDOUT: {}", stdout);
             error!("STDERR: {}", stderr);
         } else {
@@ -189,21 +231,26 @@ impl SshClient {
     /// Execute a command intended as a boolean check without emitting error logs.
     /// Returns Ok(true) if the command exits with 0, Ok(false) if non-zero, Err on transport issues.
     pub async fn check_silent(&mut self, command: &str) -> Result<bool> {
-        let session = self.session.as_mut()
-            .ok_or_else(|| crate::error::AutoInstallError::SshError("No active SSH session".to_string()))?;
+        let session = self.session.as_mut().ok_or_else(|| {
+            crate::error::AutoInstallError::SshError("No active SSH session".to_string())
+        })?;
 
-        let mut channel = session.channel_session()
-            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to create SSH channel: {}", e)))?;
+        let mut channel = session.channel_session().map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to create SSH channel: {}", e))
+        })?;
 
-        channel.exec(command)
-            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to execute command: {}", e)))?;
+        channel.exec(command).map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to execute command: {}", e))
+        })?;
 
         // We don't care about output here; just wait for status
-        channel.wait_close()
-            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to close SSH channel: {}", e)))?;
+        channel.wait_close().map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to close SSH channel: {}", e))
+        })?;
 
-        let exit_status = channel.exit_status()
-            .map_err(|e| crate::error::AutoInstallError::SshError(format!("Failed to get exit status: {}", e)))?;
+        let exit_status = channel.exit_status().map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to get exit status: {}", e))
+        })?;
 
         Ok(exit_status == 0)
     }
@@ -218,9 +265,18 @@ impl SshClient {
         let debug_commands = vec![
             ("System Info", "uname -a"),
             ("Disk Status", "lsblk -a"),
-            ("ZFS Pools", "zpool status 2>/dev/null || echo 'No ZFS pools'"),
-            ("ZFS Datasets", "zfs list 2>/dev/null || echo 'No ZFS datasets'"),
-            ("LUKS Status", "cryptsetup status luks 2>/dev/null || echo 'No LUKS devices'"),
+            (
+                "ZFS Pools",
+                "zpool status 2>/dev/null || echo 'No ZFS pools'",
+            ),
+            (
+                "ZFS Datasets",
+                "zfs list 2>/dev/null || echo 'No ZFS datasets'",
+            ),
+            (
+                "LUKS Status",
+                "cryptsetup status luks 2>/dev/null || echo 'No LUKS devices'",
+            ),
             ("Mount Points", "mount | grep -E '(zfs|luks|mapper)'"),
             ("Disk Space", "df -h"),
             ("Memory Usage", "free -h"),
@@ -245,55 +301,49 @@ impl SshClient {
     pub async fn upload_file(&mut self, local_path: &str, remote_path: &str) -> Result<()> {
         info!("Uploading {} to {}:{}", local_path, self.host, remote_path);
 
-        let session = self.session.as_mut()
-            .ok_or_else(|| crate::error::AutoInstallError::SshError(
-                "No active SSH session".to_string()
-            ))?;
+        let session = self.session.as_mut().ok_or_else(|| {
+            crate::error::AutoInstallError::SshError("No active SSH session".to_string())
+        })?;
 
         // Get file size
-        let metadata = std::fs::metadata(local_path)
-            .map_err(crate::error::AutoInstallError::IoError)?;
+        let metadata =
+            std::fs::metadata(local_path).map_err(crate::error::AutoInstallError::IoError)?;
 
         let file_size = metadata.len();
 
         // Create SCP channel
-        let mut remote_file = session.scp_send(
-            std::path::Path::new(remote_path),
-            0o644,
-            file_size,
-            None,
-        ).map_err(|e| crate::error::AutoInstallError::SshError(
-            format!("Failed to create SCP channel: {}", e)
-        ))?;
+        let mut remote_file = session
+            .scp_send(std::path::Path::new(remote_path), 0o644, file_size, None)
+            .map_err(|e| {
+                crate::error::AutoInstallError::SshError(format!(
+                    "Failed to create SCP channel: {}",
+                    e
+                ))
+            })?;
 
         // Read and send file
-        let file_content = std::fs::read(local_path)
-            .map_err(crate::error::AutoInstallError::IoError)?;
+        let file_content =
+            std::fs::read(local_path).map_err(crate::error::AutoInstallError::IoError)?;
 
-        remote_file.write_all(&file_content)
-            .map_err(|e| crate::error::AutoInstallError::SshError(
-                format!("Failed to write file data: {}", e)
-            ))?;
+        remote_file.write_all(&file_content).map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to write file data: {}", e))
+        })?;
 
-        remote_file.send_eof()
-            .map_err(|e| crate::error::AutoInstallError::SshError(
-                format!("Failed to send EOF: {}", e)
-            ))?;
+        remote_file.send_eof().map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to send EOF: {}", e))
+        })?;
 
-        remote_file.wait_eof()
-            .map_err(|e| crate::error::AutoInstallError::SshError(
-                format!("Failed to wait for EOF: {}", e)
-            ))?;
+        remote_file.wait_eof().map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to wait for EOF: {}", e))
+        })?;
 
-        remote_file.close()
-            .map_err(|e| crate::error::AutoInstallError::SshError(
-                format!("Failed to close remote file: {}", e)
-            ))?;
+        remote_file.close().map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to close remote file: {}", e))
+        })?;
 
-        remote_file.wait_close()
-            .map_err(|e| crate::error::AutoInstallError::SshError(
-                format!("Failed to wait for close: {}", e)
-            ))?;
+        remote_file.wait_close().map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to wait for close: {}", e))
+        })?;
 
         info!("File upload completed");
         Ok(())
@@ -301,53 +351,53 @@ impl SshClient {
 
     /// Download file from remote host
     pub async fn download_file(&mut self, remote_path: &str, local_path: &str) -> Result<()> {
-        info!("Downloading {}:{} to {}", self.host, remote_path, local_path);
+        info!(
+            "Downloading {}:{} to {}",
+            self.host, remote_path, local_path
+        );
 
-        let session = self.session.as_mut()
-            .ok_or_else(|| crate::error::AutoInstallError::SshError(
-                "No active SSH session".to_string()
-            ))?;
+        let session = self.session.as_mut().ok_or_else(|| {
+            crate::error::AutoInstallError::SshError("No active SSH session".to_string())
+        })?;
 
-        let (mut remote_file, stat) = session.scp_recv(std::path::Path::new(remote_path))
-            .map_err(|e| crate::error::AutoInstallError::SshError(
-                format!("Failed to create SCP receive channel: {}", e)
-            ))?;
+        let (mut remote_file, stat) = session
+            .scp_recv(std::path::Path::new(remote_path))
+            .map_err(|e| {
+                crate::error::AutoInstallError::SshError(format!(
+                    "Failed to create SCP receive channel: {}",
+                    e
+                ))
+            })?;
 
         let mut contents = Vec::new();
-        remote_file.read_to_end(&mut contents)
-            .map_err(|e| crate::error::AutoInstallError::SshError(
-                format!("Failed to read remote file: {}", e)
-            ))?;
+        remote_file.read_to_end(&mut contents).map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to read remote file: {}", e))
+        })?;
 
         // Verify file size
         if contents.len() != stat.size() as usize {
             return Err(crate::error::AutoInstallError::SshError(
-                "File size mismatch during download".to_string()
+                "File size mismatch during download".to_string(),
             ));
         }
 
-        std::fs::write(local_path, contents)
-            .map_err(crate::error::AutoInstallError::IoError)?;
+        std::fs::write(local_path, contents).map_err(crate::error::AutoInstallError::IoError)?;
 
-        remote_file.send_eof()
-            .map_err(|e| crate::error::AutoInstallError::SshError(
-                format!("Failed to send EOF: {}", e)
-            ))?;
+        remote_file.send_eof().map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to send EOF: {}", e))
+        })?;
 
-        remote_file.wait_eof()
-            .map_err(|e| crate::error::AutoInstallError::SshError(
-                format!("Failed to wait for EOF: {}", e)
-            ))?;
+        remote_file.wait_eof().map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to wait for EOF: {}", e))
+        })?;
 
-        remote_file.close()
-            .map_err(|e| crate::error::AutoInstallError::SshError(
-                format!("Failed to close remote file: {}", e)
-            ))?;
+        remote_file.close().map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to close remote file: {}", e))
+        })?;
 
-        remote_file.wait_close()
-            .map_err(|e| crate::error::AutoInstallError::SshError(
-                format!("Failed to wait for close: {}", e)
-            ))?;
+        remote_file.wait_close().map_err(|e| {
+            crate::error::AutoInstallError::SshError(format!("Failed to wait for close: {}", e))
+        })?;
 
         info!("File download completed");
         Ok(())

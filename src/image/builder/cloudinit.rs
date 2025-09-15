@@ -4,11 +4,11 @@
 
 //! Cloud-init configuration generation
 
+use crate::config::ImageSpec;
+use crate::Result;
 use std::path::PathBuf;
 use tokio::fs;
 use tracing::debug;
-use crate::config::ImageSpec;
-use crate::Result;
 
 /// Cloud-init configuration manager
 pub struct CloudInitManager {
@@ -48,7 +48,8 @@ impl CloudInitManager {
         // In production, this should be configurable or use key-based auth only
         let password_hash = "$6$rounds=4096$saltsalt$Nn9XLY39PZBO1NMdM9M1BKoJFtIpEcj1zLEHdN6mU.FWrJKOvE4PN8.BGeLhq.KOdFBVZ3MmE7Bl/VLy5L78O1";
 
-        let config = format!(r#"#cloud-config
+        let config = format!(
+            r#"#cloud-config
 autoinstall:
   version: 1
   locale: en_US.UTF-8
@@ -98,7 +99,9 @@ autoinstall:
   error-commands:
     - echo "Installation failed at $(date)" > /target/var/log/autoinstall-error.log
     - journalctl -b > /target/var/log/autoinstall-journal.log
-"#, packages, password_hash);
+"#,
+            packages, password_hash
+        );
 
         Ok(config)
     }

@@ -8,12 +8,12 @@
 //! for Ubuntu with ZFS and LUKS encryption.
 
 pub mod config;
+pub mod disk_ops;
+pub mod installer;
 pub mod investigation;
 pub mod packages;
-pub mod disk_ops;
-pub mod zfs_ops;
 pub mod system_setup;
-pub mod installer;
+pub mod zfs_ops;
 
 pub use config::{InstallationConfig, SystemInfo};
 pub use installer::SshInstaller;

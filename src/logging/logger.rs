@@ -4,8 +4,8 @@
 
 //! Logger initialization and configuration
 
-use tracing_subscriber::{fmt, EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 use crate::Result;
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 /// Initialize the logging system
 pub fn init_logger(verbose: bool, quiet: bool) -> Result<()> {
@@ -28,25 +28,30 @@ pub fn init_logger(verbose: bool, quiet: bool) -> Result<()> {
                 .compact(),
         )
         .try_init()
-        .map_err(|e| crate::error::AutoInstallError::ConfigError(
-            format!("Failed to initialize logger: {}", e)
-        ))?;
+        .map_err(|e| {
+            crate::error::AutoInstallError::ConfigError(format!(
+                "Failed to initialize logger: {}",
+                e
+            ))
+        })?;
 
     Ok(())
 }
 
 /// Initialize structured JSON logging (for services)
 pub fn init_json_logger() -> Result<()> {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     tracing_subscriber::registry()
         .with(filter)
         .with(fmt::layer())
         .try_init()
-        .map_err(|e| crate::error::AutoInstallError::ConfigError(
-            format!("Failed to initialize JSON logger: {}", e)
-        ))?;
+        .map_err(|e| {
+            crate::error::AutoInstallError::ConfigError(format!(
+                "Failed to initialize JSON logger: {}",
+                e
+            ))
+        })?;
 
     Ok(())
 }

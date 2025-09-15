@@ -4,9 +4,9 @@
 
 //! System utility functions
 
+use crate::Result;
 use std::process::Stdio;
 use tokio::process::Command;
-use crate::Result;
 use tracing::{debug, warn};
 
 /// System utility functions
@@ -53,25 +53,29 @@ impl SystemUtils {
             .args(["-m"])
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::SystemError(
-                format!("Failed to get memory info: {}", e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::SystemError(format!(
+                    "Failed to get memory info: {}",
+                    e
+                ))
+            })?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         for line in stdout.lines() {
             if line.starts_with("Mem:") {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() >= 7 {
-                    return parts[6].parse::<u64>()
-                        .map_err(|_| crate::error::AutoInstallError::SystemError(
-                            "Failed to parse memory value".to_string()
-                        ));
+                    return parts[6].parse::<u64>().map_err(|_| {
+                        crate::error::AutoInstallError::SystemError(
+                            "Failed to parse memory value".to_string(),
+                        )
+                    });
                 }
             }
         }
 
         Err(crate::error::AutoInstallError::SystemError(
-            "Failed to find memory information".to_string()
+            "Failed to find memory information".to_string(),
         ))
     }
 
@@ -83,9 +87,12 @@ impl SystemUtils {
             .args(["-BG", path])
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::SystemError(
-                format!("Failed to get disk space info: {}", e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::SystemError(format!(
+                    "Failed to get disk space info: {}",
+                    e
+                ))
+            })?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let lines: Vec<&str> = stdout.lines().collect();
@@ -94,15 +101,16 @@ impl SystemUtils {
             let parts: Vec<&str> = lines[1].split_whitespace().collect();
             if parts.len() >= 4 {
                 let available = parts[3].trim_end_matches('G');
-                return available.parse::<u64>()
-                    .map_err(|_| crate::error::AutoInstallError::SystemError(
-                        "Failed to parse disk space value".to_string()
-                    ));
+                return available.parse::<u64>().map_err(|_| {
+                    crate::error::AutoInstallError::SystemError(
+                        "Failed to parse disk space value".to_string(),
+                    )
+                });
             }
         }
 
         Err(crate::error::AutoInstallError::SystemError(
-            "Failed to find disk space information".to_string()
+            "Failed to find disk space information".to_string(),
         ))
     }
 
@@ -145,9 +153,9 @@ impl SystemUtils {
             .args(["--version"])
             .output()
             .await
-            .map_err(|_| crate::error::AutoInstallError::SystemError(
-                "cryptsetup not available".to_string()
-            ))?;
+            .map_err(|_| {
+                crate::error::AutoInstallError::SystemError("cryptsetup not available".to_string())
+            })?;
 
         Ok(output.status.success())
     }
@@ -176,26 +184,37 @@ impl SystemUtils {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| crate::error::AutoInstallError::SystemError(
-                format!("Failed to spawn command {}: {}", command, e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::SystemError(format!(
+                    "Failed to spawn command {}: {}",
+                    command, e
+                ))
+            })?;
 
         let timeout = tokio::time::Duration::from_secs(timeout_secs);
         let output = tokio::time::timeout(timeout, child.wait_with_output())
             .await
-            .map_err(|_| crate::error::AutoInstallError::SystemError(
-                format!("Command {} timed out after {} seconds", command, timeout_secs)
-            ))?
-            .map_err(|e| crate::error::AutoInstallError::SystemError(
-                format!("Command {} failed: {}", command, e)
-            ))?;
+            .map_err(|_| {
+                crate::error::AutoInstallError::SystemError(format!(
+                    "Command {} timed out after {} seconds",
+                    command, timeout_secs
+                ))
+            })?
+            .map_err(|e| {
+                crate::error::AutoInstallError::SystemError(format!(
+                    "Command {} failed: {}",
+                    command, e
+                ))
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(crate::error::AutoInstallError::SystemError(
-                format!("Command {} failed with exit code {}: {}",
-                        command, output.status.code().unwrap_or(-1), stderr)
-            ));
+            return Err(crate::error::AutoInstallError::SystemError(format!(
+                "Command {} failed with exit code {}: {}",
+                command,
+                output.status.code().unwrap_or(-1),
+                stderr
+            )));
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
@@ -219,7 +238,10 @@ mod tests {
     fn test_get_system_arch() {
         let arch = SystemUtils::get_system_arch();
         // Should return either Amd64 or Arm64
-        assert!(matches!(arch, crate::config::Architecture::Amd64 | crate::config::Architecture::Arm64));
+        assert!(matches!(
+            arch,
+            crate::config::Architecture::Amd64 | crate::config::Architecture::Arm64
+        ));
     }
 
     #[tokio::test]

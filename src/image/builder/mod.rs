@@ -4,21 +4,21 @@
 
 //! Modular image builder implementation
 
-use std::path::PathBuf;
-use tokio::fs;
-use tracing::{debug, info};
 use crate::config::ImageSpec;
 use crate::utils::VmManager;
 use crate::Result;
+use std::path::PathBuf;
+use tokio::fs;
+use tracing::{debug, info};
 
-mod iso;
-mod disk;
 mod cloudinit;
+mod disk;
+mod iso;
 mod postprocess;
 
-use iso::IsoManager;
-use disk::DiskManager;
 use cloudinit::CloudInitManager;
+use disk::DiskManager;
+use iso::IsoManager;
 use postprocess::PostProcessor;
 
 /// Golden image builder using QEMU/KVM
@@ -58,8 +58,11 @@ impl ImageBuilder {
         spec: ImageSpec,
         output_path: Option<String>,
     ) -> Result<PathBuf> {
-        info!("Creating Ubuntu {} image for {}",
-              spec.ubuntu_version, spec.architecture.as_str());
+        info!(
+            "Creating Ubuntu {} image for {}",
+            spec.ubuntu_version,
+            spec.architecture.as_str()
+        );
 
         // Create working directory
         self.setup_work_dir().await?;
@@ -75,7 +78,9 @@ impl ImageBuilder {
 
         // Create VM disk
         let vm_disk = disk_manager.get_vm_disk_path();
-        disk_manager.create_qemu_disk(&vm_disk, spec.vm_config.disk_size_gb).await?;
+        disk_manager
+            .create_qemu_disk(&vm_disk, spec.vm_config.disk_size_gb)
+            .await?;
 
         // Create cloud-init config for automated installation
         let cloud_init_path = cloudinit_manager.create_cloud_init_config(&spec).await?;
@@ -107,7 +112,9 @@ impl ImageBuilder {
         postprocessor.generalize_image(&vm_disk).await?;
 
         // Compress and finalize image
-        let final_path = postprocessor.finalize_image(&vm_disk, output_path, &spec).await?;
+        let final_path = postprocessor
+            .finalize_image(&vm_disk, output_path, &spec)
+            .await?;
 
         // Cleanup
         self.cleanup_work_dir().await?;
@@ -119,9 +126,11 @@ impl ImageBuilder {
     /// Set up working directory
     async fn setup_work_dir(&self) -> Result<()> {
         // Create both work and cache directories
-        fs::create_dir_all(&self.work_dir).await
+        fs::create_dir_all(&self.work_dir)
+            .await
             .map_err(crate::error::AutoInstallError::IoError)?;
-        fs::create_dir_all(&self.cache_dir).await
+        fs::create_dir_all(&self.cache_dir)
+            .await
             .map_err(crate::error::AutoInstallError::IoError)?;
 
         debug!("Work directory created: {}", self.work_dir.display());
@@ -132,7 +141,8 @@ impl ImageBuilder {
     /// Cleanup working directory
     async fn cleanup_work_dir(&self) -> Result<()> {
         if self.work_dir.exists() {
-            fs::remove_dir_all(&self.work_dir).await
+            fs::remove_dir_all(&self.work_dir)
+                .await
                 .map_err(crate::error::AutoInstallError::IoError)?;
             debug!("Cleaned up work directory");
         }

@@ -4,13 +4,13 @@
 
 //! Network download utilities
 
+use crate::Result;
+use futures::StreamExt;
+use indicatif::{ProgressBar, ProgressStyle};
 use std::path::Path;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
-use futures::StreamExt;
-use indicatif::{ProgressBar, ProgressStyle};
-use crate::Result;
-use tracing::{info, debug};
+use tracing::{debug, info};
 
 /// Network downloader with progress tracking
 pub struct NetworkDownloader {
@@ -26,19 +26,16 @@ impl NetworkDownloader {
     }
 
     /// Download file with progress bar
-    pub async fn download_with_progress<P: AsRef<Path>>(
-        &self,
-        url: &str,
-        dest: P,
-    ) -> Result<()> {
+    pub async fn download_with_progress<P: AsRef<Path>>(&self, url: &str, dest: P) -> Result<()> {
         info!("Downloading: {}", url);
 
         let response = self.client.get(url).send().await?;
 
         if !response.status().is_success() {
-            return Err(crate::error::AutoInstallError::NetworkError(
-                format!("Download failed with status: {}", response.status())
-            ));
+            return Err(crate::error::AutoInstallError::NetworkError(format!(
+                "Download failed with status: {}",
+                response.status()
+            )));
         }
 
         let total_size = response.content_length().unwrap_or(0);
@@ -76,9 +73,10 @@ impl NetworkDownloader {
         let response = self.client.get(url).send().await?;
 
         if !response.status().is_success() {
-            return Err(crate::error::AutoInstallError::NetworkError(
-                format!("Download failed with status: {}", response.status())
-            ));
+            return Err(crate::error::AutoInstallError::NetworkError(format!(
+                "Download failed with status: {}",
+                response.status()
+            )));
         }
 
         let bytes = response.bytes().await?;
@@ -119,7 +117,9 @@ mod tests {
 
         // Test with a reliable URL (this might fail in CI without internet)
         // In a real test environment, you'd use a mock server
-        let result = downloader.verify_url("https://httpbin.org/status/200").await;
+        let result = downloader
+            .verify_url("https://httpbin.org/status/200")
+            .await;
         // We can't assert this will always pass due to network conditions
         assert!(result.is_ok());
     }
@@ -129,7 +129,9 @@ mod tests {
         let downloader = NetworkDownloader::new();
 
         // Test with a URL that should return content-length
-        let result = downloader.get_file_size("https://httpbin.org/bytes/1024").await;
+        let result = downloader
+            .get_file_size("https://httpbin.org/bytes/1024")
+            .await;
         assert!(result.is_ok());
     }
 }

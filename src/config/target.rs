@@ -4,8 +4,8 @@
 
 //! Target machine configuration structures
 
-use serde::{Deserialize, Serialize};
 use super::Architecture;
+use serde::{Deserialize, Serialize};
 
 /// Configuration for target machine deployment
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,9 +92,10 @@ impl TargetConfig {
 
         // Validate disk device
         if !self.disk_device.starts_with("/dev/") {
-            return Err(crate::error::AutoInstallError::ValidationError(
-                format!("Invalid disk device: {}", self.disk_device),
-            ));
+            return Err(crate::error::AutoInstallError::ValidationError(format!(
+                "Invalid disk device: {}",
+                self.disk_device
+            )));
         }
 
         // Validate users

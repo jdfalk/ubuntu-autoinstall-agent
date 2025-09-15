@@ -8,9 +8,9 @@
 //! when available, falling back to system commands when not available.
 //! See: https://github.com/uutils/coreutils
 
+use crate::Result;
 use std::path::Path;
 use tokio::process::Command;
-use crate::Result;
 use tracing::debug;
 
 /// Coreutils command executor with fallback to system commands
@@ -39,15 +39,19 @@ impl CoreUtils {
             .args(["-BG", path.as_ref().to_str().unwrap()])
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::SystemError(
-                format!("Failed to execute {} command: {}", cmd, e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::SystemError(format!(
+                    "Failed to execute {} command: {}",
+                    cmd, e
+                ))
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(crate::error::AutoInstallError::SystemError(
-                format!("{} command failed: {}", cmd, stderr)
-            ));
+            return Err(crate::error::AutoInstallError::SystemError(format!(
+                "{} command failed: {}",
+                cmd, stderr
+            )));
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
@@ -60,15 +64,19 @@ impl CoreUtils {
             .args(["-la", path.as_ref().to_str().unwrap()])
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::SystemError(
-                format!("Failed to execute {} command: {}", cmd, e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::SystemError(format!(
+                    "Failed to execute {} command: {}",
+                    cmd, e
+                ))
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(crate::error::AutoInstallError::SystemError(
-                format!("{} command failed: {}", cmd, stderr)
-            ));
+            return Err(crate::error::AutoInstallError::SystemError(format!(
+                "{} command failed: {}",
+                cmd, stderr
+            )));
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
@@ -81,15 +89,19 @@ impl CoreUtils {
             .arg(path.as_ref().to_str().unwrap())
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::SystemError(
-                format!("Failed to execute {} command: {}", cmd, e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::SystemError(format!(
+                    "Failed to execute {} command: {}",
+                    cmd, e
+                ))
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(crate::error::AutoInstallError::SystemError(
-                format!("{} command failed: {}", cmd, stderr)
-            ));
+            return Err(crate::error::AutoInstallError::SystemError(format!(
+                "{} command failed: {}",
+                cmd, stderr
+            )));
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
@@ -105,15 +117,19 @@ impl CoreUtils {
             ])
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::SystemError(
-                format!("Failed to execute {} command: {}", cmd, e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::SystemError(format!(
+                    "Failed to execute {} command: {}",
+                    cmd, e
+                ))
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(crate::error::AutoInstallError::SystemError(
-                format!("{} command failed: {}", cmd, stderr)
-            ));
+            return Err(crate::error::AutoInstallError::SystemError(format!(
+                "{} command failed: {}",
+                cmd, stderr
+            )));
         }
 
         Ok(())
@@ -132,15 +148,19 @@ impl CoreUtils {
             .arg(path.as_ref().to_str().unwrap())
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::SystemError(
-                format!("Failed to execute {} command: {}", cmd, e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::SystemError(format!(
+                    "Failed to execute {} command: {}",
+                    cmd, e
+                ))
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(crate::error::AutoInstallError::SystemError(
-                format!("{} command failed: {}", cmd, stderr)
-            ));
+            return Err(crate::error::AutoInstallError::SystemError(format!(
+                "{} command failed: {}",
+                cmd, stderr
+            )));
         }
 
         Ok(())
@@ -163,15 +183,19 @@ impl CoreUtils {
             .arg(path.as_ref().to_str().unwrap())
             .output()
             .await
-            .map_err(|e| crate::error::AutoInstallError::SystemError(
-                format!("Failed to execute {} command: {}", cmd, e)
-            ))?;
+            .map_err(|e| {
+                crate::error::AutoInstallError::SystemError(format!(
+                    "Failed to execute {} command: {}",
+                    cmd, e
+                ))
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(crate::error::AutoInstallError::SystemError(
-                format!("{} command failed: {}", cmd, stderr)
-            ));
+            return Err(crate::error::AutoInstallError::SystemError(format!(
+                "{} command failed: {}",
+                cmd, stderr
+            )));
         }
 
         Ok(())
@@ -179,7 +203,9 @@ impl CoreUtils {
 
     /// Check if uutils implementations are available
     pub async fn check_uutils_availability() -> Result<Vec<String>> {
-        let common_utils = ["cat", "cp", "df", "ls", "mkdir", "rm", "mv", "chmod", "chown"];
+        let common_utils = [
+            "cat", "cp", "df", "ls", "mkdir", "rm", "mv", "chmod", "chown",
+        ];
         let mut available = Vec::new();
         let mut missing = Vec::new();
 

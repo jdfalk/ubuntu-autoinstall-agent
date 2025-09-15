@@ -4,8 +4,8 @@
 
 //! Command line argument definitions
 
-use clap::{Parser, Subcommand};
 use crate::config::Architecture;
+use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "ubuntu-autoinstall-agent")]
@@ -104,10 +104,16 @@ pub enum Commands {
         #[arg(long, help = "Show what would be done without actually doing it")]
         dry_run: bool,
 
-        #[arg(long, help = "On failure: do not cleanup/unmount; dump logs and open an interactive shell on the target (keep connection alive)")]
+        #[arg(
+            long,
+            help = "On failure: do not cleanup/unmount; dump logs and open an interactive shell on the target (keep connection alive)"
+        )]
         hold_on_failure: bool,
 
-        #[arg(long, help = "Pause after storage setup (partitioning, formatting, LUKS, ZFS pools/datasets) and print next commands to run manually")]
+        #[arg(
+            long,
+            help = "Pause after storage setup (partitioning, formatting, LUKS, ZFS pools/datasets) and print next commands to run manually"
+        )]
         pause_after_storage: bool,
     },
 }

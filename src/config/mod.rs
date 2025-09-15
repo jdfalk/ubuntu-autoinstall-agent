@@ -3,7 +3,7 @@
 // guid: a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d
 
 //! Configuration module for Ubuntu AutoInstall Agent
-//! 
+//!
 //! Handles loading and validation of target configurations and image specifications.
 
 pub mod image;
@@ -49,9 +49,10 @@ impl std::str::FromStr for Architecture {
         match s {
             "amd64" | "x86_64" => Ok(Architecture::Amd64),
             "arm64" | "aarch64" => Ok(Architecture::Arm64),
-            _ => Err(crate::error::AutoInstallError::ValidationError(
-                format!("Unknown architecture: {}", s),
-            )),
+            _ => Err(crate::error::AutoInstallError::ValidationError(format!(
+                "Unknown architecture: {}",
+                s
+            ))),
         }
     }
 }

@@ -4,9 +4,9 @@
 
 //! Image specification and metadata structures
 
+use super::Architecture;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use super::Architecture;
 
 /// Golden image specification for building Ubuntu images
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,9 +68,10 @@ impl ImageSpec {
     pub fn validate(&self) -> crate::Result<()> {
         // Validate Ubuntu version format (basic check)
         if !self.ubuntu_version.matches('.').count() == 1 {
-            return Err(crate::error::AutoInstallError::ValidationError(
-                format!("Invalid Ubuntu version format: {}", self.ubuntu_version),
-            ));
+            return Err(crate::error::AutoInstallError::ValidationError(format!(
+                "Invalid Ubuntu version format: {}",
+                self.ubuntu_version
+            )));
         }
 
         // Validate VM configuration
@@ -95,9 +96,10 @@ impl ImageSpec {
         // Validate custom scripts exist
         for script in &self.custom_scripts {
             if !script.exists() {
-                return Err(crate::error::AutoInstallError::ValidationError(
-                    format!("Custom script not found: {}", script.display()),
-                ));
+                return Err(crate::error::AutoInstallError::ValidationError(format!(
+                    "Custom script not found: {}",
+                    script.display()
+                )));
             }
         }
 

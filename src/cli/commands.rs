@@ -5,13 +5,13 @@
 //! Command implementations for the CLI
 
 use crate::{
-    config::{Architecture, loader::ConfigLoader, ImageSpec},
-    image::{builder::ImageBuilder, manager::ImageManager},
+    config::{loader::ConfigLoader, Architecture, ImageSpec},
     image::deployer::ImageDeployer,
-    network::{SshInstaller, InstallationConfig},
+    image::{builder::ImageBuilder, manager::ImageManager},
+    network::{InstallationConfig, SshInstaller},
     Result,
 };
-use tracing::{info, error};
+use tracing::{error, info};
 
 /// Create a golden Ubuntu image
 pub async fn create_image_command(
@@ -21,7 +21,11 @@ pub async fn create_image_command(
     spec_path: Option<String>,
     cache_dir: Option<String>,
 ) -> Result<()> {
-    info!("Creating Ubuntu {} image for {} architecture", version, arch.as_str());
+    info!(
+        "Creating Ubuntu {} image for {} architecture",
+        version,
+        arch.as_str()
+    );
 
     let spec = if let Some(spec_path) = spec_path {
         let loader = ConfigLoader::new();
@@ -56,16 +60,25 @@ pub async fn deploy_command(
     let config = loader.load_target_config(config_path)?;
 
     if dry_run {
-        info!("DRY RUN: Would deploy image {} to {} via {}",
-              image_path, target, if via_ssh { "SSH" } else { "netboot" });
-        info!("Target config: hostname={}, arch={}",
-              config.hostname, config.architecture.as_str());
+        info!(
+            "DRY RUN: Would deploy image {} to {} via {}",
+            image_path,
+            target,
+            if via_ssh { "SSH" } else { "netboot" }
+        );
+        info!(
+            "Target config: hostname={}, arch={}",
+            config.hostname,
+            config.architecture.as_str()
+        );
         return Ok(());
     }
 
     let deployer = ImageDeployer::new();
     if via_ssh {
-        deployer.deploy_via_ssh(target, &config, std::path::Path::new(image_path)).await?;
+        deployer
+            .deploy_via_ssh(target, &config, std::path::Path::new(image_path))
+            .await?;
     } else {
         deployer.deploy_via_netboot(target, &config).await?;
     }
@@ -86,7 +99,7 @@ pub async fn validate_command(image_path: &str) -> Result<()> {
     } else {
         error!("Image validation failed");
         return Err(crate::error::AutoInstallError::ImageError(
-            "Image validation failed".to_string()
+            "Image validation failed".to_string(),
         ));
     }
 
@@ -111,11 +124,15 @@ pub async fn list_images_command(
         }
 
         println!("Available Images:");
-        println!("{:<36} {:<12} {:<8} {:<12} {:<20}", "ID", "Version", "Arch", "Size", "Created");
+        println!(
+            "{:<36} {:<12} {:<8} {:<12} {:<20}",
+            "ID", "Version", "Arch", "Size", "Created"
+        );
         println!("{:-<88}", "");
 
         for image in &images {
-            println!("{:<36} {:<12} {:<8} {:<12} {:<20}",
+            println!(
+                "{:<36} {:<12} {:<8} {:<12} {:<20}",
                 image.id,
                 image.ubuntu_version,
                 image.architecture.as_str(),
@@ -146,7 +163,9 @@ pub async fn check_prerequisites_command() -> Result<()> {
         info!("Install missing packages:");
         for cmd in &missing {
             match cmd.as_str() {
-                "qemu-system-x86_64" | "qemu-img" => info!("  sudo apt install qemu-kvm qemu-utils"),
+                "qemu-system-x86_64" | "qemu-img" => {
+                    info!("  sudo apt install qemu-kvm qemu-utils")
+                }
                 "guestfish" => info!("  sudo apt install libguestfs-tools"),
                 "genisoimage" => info!("  sudo apt install genisoimage"),
                 "cryptsetup" => info!("  sudo apt install cryptsetup"),
@@ -186,7 +205,10 @@ pub async fn check_prerequisites_command() -> Result<()> {
             if space >= 20 {
                 info!("✓ Sufficient disk space in /tmp: {} GB", space);
             } else {
-                error!("✗ Insufficient disk space in /tmp: {} GB (recommended: 20+ GB)", space);
+                error!(
+                    "✗ Insufficient disk space in /tmp: {} GB (recommended: 20+ GB)",
+                    space
+                );
             }
         }
         Err(e) => error!("✗ Failed to check disk space: {}", e),
@@ -203,9 +225,10 @@ pub async fn check_prerequisites_command() -> Result<()> {
         info!("System is ready for Ubuntu autoinstall operations");
         Ok(())
     } else {
-        Err(crate::error::AutoInstallError::SystemError(
-            format!("Missing {} required dependencies", missing.len())
-        ))
+        Err(crate::error::AutoInstallError::SystemError(format!(
+            "Missing {} required dependencies",
+            missing.len()
+        )))
     }
 }
 
@@ -224,9 +247,13 @@ pub async fn cleanup_command(older_than_days: u32, dry_run: bool) -> Result<()> 
     if dry_run {
         info!("DRY RUN: Would delete {} old images:", old_images.len());
         for image in &old_images {
-            info!("  {} - {} ({}) - {}",
-                  image.id, image.ubuntu_version,
-                  image.architecture.as_str(), image.size_human());
+            info!(
+                "  {} - {} ({}) - {}",
+                image.id,
+                image.ubuntu_version,
+                image.architecture.as_str(),
+                image.size_human()
+            );
         }
         return Ok(());
     }
@@ -250,7 +277,10 @@ pub async fn ssh_install_command(
     let username = username.unwrap_or_else(|| "ubuntu".to_string());
     let _hostname = hostname.unwrap_or_else(|| "len-serv-003".to_string());
 
-    info!("Connecting to {}@{} for Ubuntu installation", username, host);
+    info!(
+        "Connecting to {}@{} for Ubuntu installation",
+        username, host
+    );
 
     let mut installer = SshInstaller::new();
 
@@ -290,27 +320,38 @@ pub async fn ssh_install_command(
         info!("  Hostname: {}", config.hostname);
         info!("  Disk: {}", config.disk_device);
         info!("  Timezone: {}", config.timezone);
-        info!("  Network: {} -> {}", config.network_interface, config.network_address);
+        info!(
+            "  Network: {} -> {}",
+            config.network_interface, config.network_address
+        );
         return Ok(());
     }
 
     // Confirm installation
     println!("\n=== INSTALLATION CONFIGURATION ===");
     println!("Target hostname: {}", config.hostname);
-    println!("Target disk: {} (THIS WILL BE COMPLETELY WIPED)", config.disk_device);
+    println!(
+        "Target disk: {} (THIS WILL BE COMPLETELY WIPED)",
+        config.disk_device
+    );
     println!("Timezone: {}", config.timezone);
     println!("Network interface: {}", config.network_interface);
     println!("Network address: {}", config.network_address);
     println!("Gateway: {}", config.network_gateway);
 
-    println!("\nWARNING: This will completely destroy all data on {}!", config.disk_device);
+    println!(
+        "\nWARNING: This will completely destroy all data on {}!",
+        config.disk_device
+    );
     println!("This is a DESTRUCTIVE operation that cannot be undone!");
 
     // In a real implementation, you might want to add a confirmation prompt here
     // For automation purposes, we'll proceed directly
 
     info!("Starting full ZFS+LUKS Ubuntu installation...");
-    installer.perform_installation_with_options_and_pause(&config, hold_on_failure, pause_after_storage).await?;
+    installer
+        .perform_installation_with_options_and_pause(&config, hold_on_failure, pause_after_storage)
+        .await?;
 
     info!("SSH installation completed successfully!");
     info!("Target machine should now be ready to boot from local disk");

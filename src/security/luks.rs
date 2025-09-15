@@ -4,12 +4,8 @@
 
 //! LUKS encryption operations
 
-use crate::{
-    config::LuksConfig,
-    network::ssh::SshClient,
-    Result,
-};
-use tracing::{info, debug};
+use crate::{config::LuksConfig, network::ssh::SshClient, Result};
+use tracing::{debug, info};
 
 /// Manager for LUKS encryption operations
 pub struct LuksManager;
@@ -32,18 +28,14 @@ impl LuksManager {
         // Validate passphrase is not a template
         if config.passphrase.starts_with("${") {
             return Err(crate::error::AutoInstallError::LuksError(
-                "LUKS passphrase contains unresolved environment variable".to_string()
+                "LUKS passphrase contains unresolved environment variable".to_string(),
             ));
         }
 
         // Create LUKS partition
         let luks_format_cmd = format!(
             "echo '{}' | cryptsetup luksFormat --cipher {} --key-size {} --hash {} --use-random {}",
-            config.passphrase,
-            config.cipher,
-            config.key_size,
-            config.hash,
-            device
+            config.passphrase, config.cipher, config.key_size, config.hash, device
         );
 
         ssh.execute(&luks_format_cmd).await?;
@@ -51,8 +43,7 @@ impl LuksManager {
         // Open LUKS partition
         let luks_open_cmd = format!(
             "echo '{}' | cryptsetup luksOpen {} ubuntu-root",
-            config.passphrase,
-            device
+            config.passphrase, device
         );
 
         ssh.execute(&luks_open_cmd).await?;
@@ -72,7 +63,9 @@ impl LuksManager {
     pub async fn verify_luks_setup(&self, ssh: &mut SshClient, device: &str) -> Result<bool> {
         debug!("Verifying LUKS setup on {}", device);
 
-        let output = ssh.execute_with_output(&format!("cryptsetup isLuks {}", device)).await?;
+        let output = ssh
+            .execute_with_output(&format!("cryptsetup isLuks {}", device))
+            .await?;
         Ok(output.trim().is_empty()) // cryptsetup isLuks returns empty on success
     }
 
@@ -80,7 +73,8 @@ impl LuksManager {
     pub fn generate_passphrase(&self, length: usize) -> String {
         use ring::rand::{SecureRandom, SystemRandom};
 
-        const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
+        const CHARSET: &[u8] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
         let rng = SystemRandom::new();
         let mut passphrase = vec![0u8; length];
 
@@ -98,31 +92,34 @@ impl LuksManager {
         // Check cipher
         let valid_ciphers = ["aes-xts-plain64", "aes-cbc-essiv:sha256"];
         if !valid_ciphers.contains(&config.cipher.as_str()) {
-            return Err(crate::error::AutoInstallError::ValidationError(
-                format!("Invalid LUKS cipher: {}", config.cipher)
-            ));
+            return Err(crate::error::AutoInstallError::ValidationError(format!(
+                "Invalid LUKS cipher: {}",
+                config.cipher
+            )));
         }
 
         // Check key size
         let valid_key_sizes = [128, 256, 512];
         if !valid_key_sizes.contains(&config.key_size) {
-            return Err(crate::error::AutoInstallError::ValidationError(
-                format!("Invalid LUKS key size: {}", config.key_size)
-            ));
+            return Err(crate::error::AutoInstallError::ValidationError(format!(
+                "Invalid LUKS key size: {}",
+                config.key_size
+            )));
         }
 
         // Check hash
         let valid_hashes = ["sha1", "sha256", "sha512"];
         if !valid_hashes.contains(&config.hash.as_str()) {
-            return Err(crate::error::AutoInstallError::ValidationError(
-                format!("Invalid LUKS hash: {}", config.hash)
-            ));
+            return Err(crate::error::AutoInstallError::ValidationError(format!(
+                "Invalid LUKS hash: {}",
+                config.hash
+            )));
         }
 
         // Check passphrase strength (basic check)
         if config.passphrase.len() < 8 && !config.passphrase.starts_with("${") {
             return Err(crate::error::AutoInstallError::ValidationError(
-                "LUKS passphrase must be at least 8 characters".to_string()
+                "LUKS passphrase must be at least 8 characters".to_string(),
             ));
         }
 
@@ -145,8 +142,8 @@ mod tests {
         let manager = LuksManager::new();
         let passphrase = manager.generate_passphrase(32);
 
-    assert_eq!(passphrase.len(), 32);
-    assert!(passphrase.is_ascii());
+        assert_eq!(passphrase.len(), 32);
+        assert!(passphrase.is_ascii());
     }
 
     #[test]
