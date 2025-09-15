@@ -3,9 +3,11 @@
 <!-- guid: b2c3d4e5-f6a7-8901-2345-678901bcdef0 -->
 
 ---
-applyTo: "**/*.rs"
+
+applyTo: "\*_/_.rs"
 description: |
-  Rust coding style and best practices for all Rust source files. Follows official Rust conventions and community standards for safe, idiomatic, and performant Rust code.
+Rust coding style and best practices for all Rust source files. Follows official Rust conventions and community standards for safe, idiomatic, and performant Rust code.
+
 ---
 
 # Rust Code Style Guide
@@ -71,7 +73,7 @@ use crate::models::User;
 - Document all public items (functions, methods, structs, enums, traits)
 - Include examples in documentation where helpful
 
-```rust
+````rust
 /// Represents a user in the system.
 ///
 /// # Examples
@@ -84,7 +86,7 @@ pub struct User {
     username: String,
     password_hash: String,
 }
-```
+````
 
 ## Error Handling
 

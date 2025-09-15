@@ -1,5 +1,5 @@
 <!-- file: .github/copilot-instructions.md -->
-<!-- version: 2.1.0 -->
+<!-- version: 2.2.0 -->
 <!-- guid: 4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f9a -->
 
 # Copilot/AI Agent Coding Instructions System
@@ -11,6 +11,22 @@ customization best practices.
 ## Documentation Updates
 
 Documentation files in `.github/instructions/` can be edited directly in this repository. Keep changes concise and consistent with the language-specific guidance. If conflicts arise during merges, resolve them directly in the affected files.
+
+## Git operations policy
+
+- Use VS Code tasks first for Git operations when available.
+- Otherwise, use the Rust utility `copilot-agent-utilr` (or `copilot-agent-util`) for consistent logging and args-file support.
+- Do not use raw `git` commands in automation unless explicitly required.
+
+Examples:
+
+- Commit using the utility:
+  - `copilot-agent-utilr git commit -m "feat: add feature"`
+  - Or via task: “Git Commit” (wired to the utility)
+- Status/add/push:
+  - `copilot-agent-utilr git status`
+  - `copilot-agent-utilr git add -A`
+  - `copilot-agent-utilr git push`
 
 ## System Overview
 

@@ -102,7 +102,7 @@ sync:
   # Paths to sync across repositories
   sync_paths:
     - ".github/workflows/ci.yml"
-  # - ".github/workflows/docs-automation.yml" # deprecated
+    # - ".github/workflows/docs-automation.yml" # deprecated
     - ".github/workflows/release-go.yml"
     - ".github/workflows/release-rust.yml"
     - ".github/workflows/release-python.yml"
@@ -120,8 +120,8 @@ sync:
     - ".github/dependabot.yml"
     - ".github/copilot-instructions.md"
     - ".pre-commit-config.yaml"
-  # - "doc_update_manager.py" # deprecated
-  # - "scripts/create-doc-update.sh" # deprecated
+    # - "doc_update_manager.py" # deprecated
+    # - "scripts/create-doc-update.sh" # deprecated
     - "scripts/workflow_manager.py"
     - "labels.json"
     - "labels.md"
@@ -144,7 +144,7 @@ sync:
     - "pyproject.toml" # Python project config
     - "buf.yaml" # Protocol buffer config (repo-specific)
     - "buf.gen.yaml" # Protocol buffer generation config (repo-specific)
-  # - ".github/doc-updates/" # deprecated
+    # - ".github/doc-updates/" # deprecated
     - "proto/" # Protocol buffer definitions (repo-specific)
     - "sdks/" # Generated SDK output (repo-specific)
 

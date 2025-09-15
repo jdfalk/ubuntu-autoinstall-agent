@@ -5,9 +5,11 @@
 <!-- To update: Create an issue/PR in jdfalk/ghcommon -->
 
 ---
-applyTo: "**"
+
+applyTo: "\*\*"
 description: |
-  General coding, documentation, and workflow rules for all Copilot/AI agents and VS Code Copilot customization. These rules apply to all files and languages unless overridden by a more specific instructions file. For details, see the main documentation in `.github/copilot-instructions.md`.
+General coding, documentation, and workflow rules for all Copilot/AI agents and VS Code Copilot customization. These rules apply to all files and languages unless overridden by a more specific instructions file. For details, see the main documentation in `.github/copilot-instructions.md`.
+
 ---
 
 ---
@@ -30,6 +32,7 @@ When the user says "do not prompt me," this means:
 8. **WORK AUTONOMOUSLY** - Make reasonable decisions and proceed without interruption
 
 **SPECIFICALLY PROHIBITED:**
+
 - "Please commit these changes"
 - "Run this command"
 - "Press continue"
@@ -38,6 +41,7 @@ When the user says "do not prompt me," this means:
 - Any form of user interaction request
 
 **If you encounter any situation that would normally require prompting, instead:**
+
 - Use default values or make reasonable assumptions
 - Use the automation tools provided (copilot-agent-util, copilot-util-args)
 - Use VS Code tasks with appropriate arguments
@@ -79,6 +83,7 @@ For more details and the full system, see
 The repositories use the `copilot-agent-util` command-line tool for enhanced logging, error handling, and automation in VS Code tasks. This Rust-based utility provides consistent output formatting and task management across all repositories.
 
 **If the `copilot-agent-util` tool is not available in your environment:**
+
 - Install it from the source repository: https://github.com/jdfalk/copilot-agent-util-rust
 - Follow the installation instructions in that repository's README
 - The tool is required for proper VS Code task execution and logging
@@ -96,19 +101,19 @@ When performing ANY operation (git, build, test, etc.), follow this priority:
 
 ### Common Operations and Their Tasks
 
-| Operation | Task Name | Manual Fallback |
-|-----------|-----------|-----------------|
-| Git add all files | `Git Add All` | `git add .` |
-| Git add specific files | `Git Add Selective` | `git add <pattern>` |
-| Git commit | `Git Commit` | `git commit -m "message"` |
-| Git push | `Git Push` | `git push` |
-| Git status | `Git Status` | `git status` |
-| Build Go project | `Go Build` | `go build` |
-| Run Go tests | `Go Test` | `go test ./...` |
-| Protocol buffer generation | `Buf Generate with Output` | `buf generate` |
-| Python tests | `Python Test` | `python -m pytest` |
-| Rust build | `Rust Build` | `cargo build` |
-| Rust tests | `Rust Test` | `cargo test` |
+| Operation                  | Task Name                  | Manual Fallback           |
+| -------------------------- | -------------------------- | ------------------------- |
+| Git add all files          | `Git Add All`              | `git add .`               |
+| Git add specific files     | `Git Add Selective`        | `git add <pattern>`       |
+| Git commit                 | `Git Commit`               | `git commit -m "message"` |
+| Git push                   | `Git Push`                 | `git push`                |
+| Git status                 | `Git Status`               | `git status`              |
+| Build Go project           | `Go Build`                 | `go build`                |
+| Run Go tests               | `Go Test`                  | `go test ./...`           |
+| Protocol buffer generation | `Buf Generate with Output` | `buf generate`            |
+| Python tests               | `Python Test`              | `python -m pytest`        |
+| Rust build                 | `Rust Build`               | `cargo build`             |
+| Rust tests                 | `Rust Test`                | `cargo test`              |
 
 ### Task Usage Examples
 
@@ -137,6 +142,7 @@ git add . && git commit -m "message" && git push
 When creating automation scripts, configuration tools, or data processing utilities:
 
 1. **FIRST CHOICE**: Python for any script with:
+
    - API interactions (GitHub, REST APIs, etc.)
    - JSON/YAML processing
    - File manipulation beyond simple copying
@@ -145,6 +151,7 @@ When creating automation scripts, configuration tools, or data processing utilit
    - More than 20-30 lines of logic
 
 2. **SECOND CHOICE**: Shell scripts (bash/sh) only for:
+
    - Simple file operations (copy, move, basic checks)
    - Basic git commands
    - Simple environment setup
@@ -158,6 +165,7 @@ When creating automation scripts, configuration tools, or data processing utilit
 ### Examples
 
 **✅ CORRECT - Use Python for:**
+
 - GitHub API interactions
 - Configuration file processing
 - Multi-step automation workflows
@@ -165,12 +173,14 @@ When creating automation scripts, configuration tools, or data processing utilit
 - Data validation and transformation
 
 **❌ INCORRECT - Don't use shell for:**
+
 - Complex JSON parsing
 - API authentication and error handling
 - Multi-repository operations
 - Scripts requiring robust error recovery
 
 **✅ ACCEPTABLE - Shell scripts for:**
+
 - Simple `cp`, `mv`, `mkdir` operations
 - Basic git commands with minimal logic
 - Environment variable setup
