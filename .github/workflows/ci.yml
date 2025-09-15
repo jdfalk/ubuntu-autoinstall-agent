@@ -1,5 +1,5 @@
 # file: .github/workflows/ci.yml
-# version: 1.20.0
+# version: 1.21.0
 # guid: f1a2b3c4-d5e6-f7a8-b9c0-d1e2f3a4b5c6
 
 name: Continuous Integration
@@ -41,6 +41,24 @@ permissions:
   attestations: write
 
 jobs:
+  # Detect project languages once at the beginning
+  detect-languages:
+    name: Detect Project Languages
+    runs-on: ubuntu-latest
+    outputs:
+      has-go: ${{ steps.detect.outputs.has-go }}
+      has-python: ${{ steps.detect.outputs.has-python }}
+      has-frontend: ${{ steps.detect.outputs.has-frontend }}
+      has-docker: ${{ steps.detect.outputs.has-docker }}
+      has-rust: ${{ steps.detect.outputs.has-rust }}
+      primary-language: ${{ steps.detect.outputs.primary-language }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Detect project languages and matrices
+        id: detect
+        run: |
+          python3 .github/scripts/detect_languages.py >> $GITHUB_OUTPUT
   # Check for commit override flags
   check-overrides:
     name: Check Commit Overrides
@@ -192,8 +210,9 @@ jobs:
   lint:
     name: Lint Code
     runs-on: ubuntu-latest
-    needs: [detect-changes, check-overrides]
-    if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target' || needs.detect-changes.outputs.workflowfiles == 'true' || needs.detect-changes.outputs.lintfiles == 'true' || needs.detect-changes.outputs.gofiles == 'true' || needs.detect-changes.outputs.frontendfiles == 'true' || needs.detect-changes.outputs.pythonfiles == 'true' || needs.detect-changes.outputs.rustfiles == 'true' || needs.detect-changes.outputs.docsfiles == 'true'
+    needs: [detect-changes, detect-languages, check-overrides]
+    # Run on PRs always; otherwise when any language or docs/workflows/linter config changed
+    if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target' || needs.detect-languages.outputs.has-go == 'true' || needs.detect-languages.outputs.has-python == 'true' || needs.detect-languages.outputs.has-frontend == 'true' || needs.detect-languages.outputs.has-docker == 'true' || needs.detect-languages.outputs.has-rust == 'true' || needs.detect-changes.outputs.workflowfiles == 'true' || needs.detect-changes.outputs.docsfiles == 'true' || needs.detect-changes.outputs.lintfiles == 'true'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -337,8 +356,8 @@ jobs:
   test-go:
     name: Test Go
     runs-on: ubuntu-latest
-    needs: [detect-changes, check-overrides]
-    if: needs.detect-changes.outputs.gofiles == 'true' && needs.check-overrides.outputs.skip-tests != 'true'
+    needs: [detect-languages, check-overrides]
+    if: needs.detect-languages.outputs.has-go == 'true' && needs.check-overrides.outputs.skip-tests != 'true'
     strategy:
       matrix:
         go-version: ["1.23", "1.24"]
@@ -383,8 +402,8 @@ jobs:
   test-frontend:
     name: Test Frontend
     runs-on: ubuntu-latest
-    needs: [detect-changes, check-overrides]
-    if: needs.detect-changes.outputs.frontendfiles == 'true' && needs.check-overrides.outputs.skip-tests != 'true'
+    needs: [detect-languages, check-overrides]
+    if: needs.detect-languages.outputs.has-frontend == 'true' && needs.check-overrides.outputs.skip-tests != 'true'
 
     steps:
       - name: Checkout repository
@@ -437,8 +456,8 @@ jobs:
   test-python:
     name: Test Python
     runs-on: ubuntu-latest
-    needs: [detect-changes, check-overrides]
-    if: needs.detect-changes.outputs.pythonfiles == 'true' && needs.check-overrides.outputs.skip-tests != 'true'
+    needs: [detect-languages, check-overrides]
+    if: needs.detect-languages.outputs.has-python == 'true' && needs.check-overrides.outputs.skip-tests != 'true'
     strategy:
       matrix:
         python-version: ["3.11", "3.12"]
@@ -488,8 +507,8 @@ jobs:
   test-rust:
     name: Test Rust
     runs-on: ubuntu-latest
-    needs: [detect-changes, check-overrides]
-    if: needs.detect-changes.outputs.rustfiles == 'true' && needs.check-overrides.outputs.skip-tests != 'true'
+    needs: [detect-languages, check-overrides]
+    if: needs.detect-languages.outputs.has-rust == 'true' && needs.check-overrides.outputs.skip-tests != 'true'
 
     steps:
       - name: Checkout repository
@@ -525,8 +544,8 @@ jobs:
   rust-coverage:
     name: Rust Coverage
     runs-on: ubuntu-latest
-    needs: [detect-changes, check-overrides]
-    if: needs.detect-changes.outputs.rustfiles == 'true' && needs.check-overrides.outputs.skip-tests != 'true'
+    needs: [detect-languages, check-overrides]
+    if: needs.detect-languages.outputs.has-rust == 'true' && needs.check-overrides.outputs.skip-tests != 'true'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -596,7 +615,7 @@ jobs:
   release-build:
     name: Release Build
     uses: ./.github/workflows/release.yml
-    needs: [detect-changes, check-overrides]
+    needs: [detect-changes, detect-languages, check-overrides]
     if: needs.check-overrides.outputs.skip-tests != 'true'
     with:
       release_type: auto
@@ -608,8 +627,8 @@ jobs:
   test-docker:
     name: Test Docker
     runs-on: ubuntu-latest
-    needs: [detect-changes, check-overrides]
-    if: needs.detect-changes.outputs.dockerfiles == 'true' && needs.check-overrides.outputs.skip-tests != 'true'
+    needs: [detect-languages, check-overrides]
+    if: needs.detect-languages.outputs.has-docker == 'true' && needs.check-overrides.outputs.skip-tests != 'true'
 
     steps:
       - name: Checkout repository
@@ -638,7 +657,7 @@ jobs:
   test-docs:
     name: Test Documentation
     runs-on: ubuntu-latest
-    needs: [detect-changes, check-overrides]
+    needs: [detect-changes, detect-languages, check-overrides]
     if: needs.detect-changes.outputs.docsfiles == 'true' && needs.check-overrides.outputs.skip-tests != 'true'
 
     steps:
@@ -659,7 +678,7 @@ jobs:
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
-    needs: [detect-changes, check-overrides]
+    needs: [detect-changes, detect-languages, check-overrides]
     if: needs.check-overrides.outputs.skip-tests != 'true'
     permissions:
       security-events: write
@@ -676,8 +695,8 @@ jobs:
   performance-test:
     name: Performance Test
     runs-on: ubuntu-latest
-    needs: [detect-changes, check-overrides]
-    if: needs.detect-changes.outputs.gofiles == 'true' && needs.check-overrides.outputs.skip-tests != 'true'
+    needs: [detect-languages, check-overrides]
+    if: needs.detect-languages.outputs.has-go == 'true' && needs.check-overrides.outputs.skip-tests != 'true'
 
     steps:
       - name: Checkout repository
@@ -704,6 +723,7 @@ jobs:
     needs:
       [
         detect-changes,
+        detect-languages,
         check-overrides,
         lint,
         test-go,
@@ -724,10 +744,19 @@ jobs:
         run: |
           echo "# 🚀 CI Pipeline Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🧭 Detection" >> $GITHUB_STEP_SUMMARY
+          echo "- Primary language: ${{ needs.detect-languages.outputs.primary-language }}" >> $GITHUB_STEP_SUMMARY
+          echo "- has-rust: ${{ needs.detect-languages.outputs.has-rust }}" >> $GITHUB_STEP_SUMMARY
+          echo "- has-go: ${{ needs.detect-languages.outputs.has-go }}" >> $GITHUB_STEP_SUMMARY
+          echo "- has-python: ${{ needs.detect-languages.outputs.has-python }}" >> $GITHUB_STEP_SUMMARY
+          echo "- has-frontend: ${{ needs.detect-languages.outputs.has-frontend }}" >> $GITHUB_STEP_SUMMARY
+          echo "- has-docker: ${{ needs.detect-languages.outputs.has-docker }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           echo "## 📊 Job Results" >> $GITHUB_STEP_SUMMARY
           echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Detect Changes | ${{ needs.detect-changes.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Detect Languages | ${{ needs.detect-languages.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Check Overrides | ${{ needs.check-overrides.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Lint | ${{ needs.lint.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Test Go | ${{ needs.test-go.result }} |" >> $GITHUB_STEP_SUMMARY
