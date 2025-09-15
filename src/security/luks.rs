@@ -1,5 +1,5 @@
 // file: src/security/luks.rs
-// version: 1.0.0
+// version: 1.0.1
 // guid: q7r8s9t0-u1v2-3456-7890-123456qrstuv
 
 //! LUKS encryption operations
@@ -144,15 +144,15 @@ mod tests {
     fn test_generate_passphrase() {
         let manager = LuksManager::new();
         let passphrase = manager.generate_passphrase(32);
-        
-        assert_eq!(passphrase.len(), 32);
-        assert!(passphrase.chars().all(|c| c.is_ascii()));
+
+    assert_eq!(passphrase.len(), 32);
+    assert!(passphrase.is_ascii());
     }
 
     #[test]
     fn test_validate_config() {
         let manager = LuksManager::new();
-        
+
         let valid_config = LuksConfig {
             passphrase: "securepassword123!".to_string(),
             cipher: "aes-xts-plain64".to_string(),
@@ -175,7 +175,7 @@ mod tests {
     #[test]
     fn test_env_var_passphrase() {
         let manager = LuksManager::new();
-        
+
         let env_config = LuksConfig {
             passphrase: "${LUKS_PASSPHRASE}".to_string(),
             cipher: "aes-xts-plain64".to_string(),

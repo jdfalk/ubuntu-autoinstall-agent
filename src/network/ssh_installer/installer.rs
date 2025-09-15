@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/installer.rs
-// version: 1.11.0
+// version: 1.11.1
 // guid: sshins01-2345-6789-abcd-ef0123456789
 
 //! Main SSH installer orchestrating all installation phases
@@ -34,10 +34,8 @@ impl SshInstaller {
 
     /// Perform installation with additional options (e.g., hold-on-failure, pause-after-storage)
     pub async fn perform_installation_with_options_and_pause(&mut self, config: &InstallationConfig, hold_on_failure: bool, pause_after_storage: bool) -> Result<()> {
-        if !hold_on_failure {
-            if !pause_after_storage {
-                return self.perform_installation(config).await;
-            }
+        if !hold_on_failure && !pause_after_storage {
+            return self.perform_installation(config).await;
         }
 
         if !self.connected {

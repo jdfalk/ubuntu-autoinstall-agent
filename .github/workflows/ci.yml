@@ -1,5 +1,5 @@
 # file: .github/workflows/ci.yml
-# version: 1.19.0
+# version: 1.20.0
 # guid: f1a2b3c4-d5e6-f7a8-b9c0-d1e2f3a4b5c6
 
 name: Continuous Integration
@@ -58,6 +58,7 @@ jobs:
       dockerfiles: ${{ steps.filter.outputs.dockerfiles }}
       docsfiles: ${{ steps.filter.outputs.docsfiles }}
       workflowfiles: ${{ steps.filter.outputs.workflowfiles }}
+      lintfiles: ${{ steps.filter.outputs.lintfiles }}
 
     steps:
       - name: Checkout repository
@@ -76,6 +77,8 @@ jobs:
               - 'go.sum'
               - '**/go.mod'
               - '**/go.sum'
+            lintfiles:
+              - '.github/linters/**'
             frontendfiles:
               - 'webui/**/*.js'
               - 'webui/**/*.jsx'
@@ -164,6 +167,7 @@ jobs:
           echo "Docker files changed: ${{ steps.filter.outputs.dockerfiles }}"
           echo "Docs files changed: ${{ steps.filter.outputs.docsfiles }}"
           echo "Workflow files changed: ${{ steps.filter.outputs.workflowfiles }}"
+          echo "Linter config files changed: ${{ steps.filter.outputs.lintfiles }}"
 
       - name: Determine workflow execution
         id: execution
@@ -189,7 +193,7 @@ jobs:
     name: Lint Code
     runs-on: ubuntu-latest
     needs: [detect-changes, check-overrides]
-    if: needs.detect-changes.outputs.workflowfiles == 'true' || needs.detect-changes.outputs.gofiles == 'true' || needs.detect-changes.outputs.frontendfiles == 'true' || needs.detect-changes.outputs.pythonfiles == 'true' || needs.detect-changes.outputs.rustfiles == 'true' || needs.detect-changes.outputs.docsfiles == 'true'
+    if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target' || needs.detect-changes.outputs.workflowfiles == 'true' || needs.detect-changes.outputs.lintfiles == 'true' || needs.detect-changes.outputs.gofiles == 'true' || needs.detect-changes.outputs.frontendfiles == 'true' || needs.detect-changes.outputs.pythonfiles == 'true' || needs.detect-changes.outputs.rustfiles == 'true' || needs.detect-changes.outputs.docsfiles == 'true'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -272,12 +276,30 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Load CI Super Linter Configuration
+      - name: Load Super Linter Configuration
         id: super-linter-config
         run: |
-          # Load environment variables from CI-specific config file
-          if [ -f .github/linters/super-linter-ci.env ]; then
-            echo "Loading CI Super Linter configuration from .github/linters/super-linter-ci.env"
+          # Prefer PR-specific config on PR events when available
+          if [[ "${{ github.event_name }}" == "pull_request" || "${{ github.event_name }}" == "pull_request_target" ]]; then
+            if [ -f .github/linters/super-linter-pr.env ]; then
+              echo "Loading PR Super Linter configuration from .github/linters/super-linter-pr.env"
+              src_file=.github/linters/super-linter-pr.env
+            elif [ -f .github/linters/super-linter-ci.env ]; then
+              echo "PR config not found, falling back to CI config (.github/linters/super-linter-ci.env)"
+              src_file=.github/linters/super-linter-ci.env
+            else
+              src_file=""
+            fi
+          else
+            if [ -f .github/linters/super-linter-ci.env ]; then
+              echo "Loading CI Super Linter configuration from .github/linters/super-linter-ci.env"
+              src_file=.github/linters/super-linter-ci.env
+            else
+              src_file=""
+            fi
+          fi
+
+          if [ -n "$src_file" ]; then
             # Export all variables from the env file to GitHub environment
             while IFS='=' read -r key value; do
               # Skip comments and empty lines
@@ -288,20 +310,7 @@ jobs:
                 # Export to GitHub environment for use in subsequent steps
                 echo "$key=$value" >> $GITHUB_ENV
               fi
-            done < .github/linters/super-linter-ci.env
-          elif [ -f .github/linters/super-linter.env ]; then
-            echo "CI config not found, falling back to .github/linters/super-linter.env"
-            # Export all variables from the env file to GitHub environment
-            while IFS='=' read -r key value; do
-              # Skip comments and empty lines
-              if [[ ! "$key" =~ ^[[:space:]]*# && -n "$key" ]]; then
-                # Remove any quotes and whitespace
-                key=$(echo "$key" | xargs)
-                value=$(echo "$value" | xargs)
-                # Export to GitHub environment for use in subsequent steps
-                echo "$key=$value" >> $GITHUB_ENV
-              fi
-            done < .github/linters/super-linter.env
+            done < "$src_file"
           else
             echo "Warning: No Super Linter configuration found"
           fi

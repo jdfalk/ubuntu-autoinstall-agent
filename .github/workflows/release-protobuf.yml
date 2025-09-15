@@ -1,5 +1,5 @@
 # file: .github/workflows/release-protobuf.yml
-# version: 1.0.1
+# version: 1.0.2
 # guid: d8e2f6a1-b9c7-4d8e-820f-5b7ac4d2e6f3
 name: Release Protobuf Assets
 
@@ -16,7 +16,7 @@ on:
         type: boolean
         default: false
     outputs:
-      artifacts-available:
+      artifacts_available:
         description: "Indicates protobuf artifacts were generated (or existed)"
         value: ${{ jobs.generate.outputs.artifacts_available }}
 

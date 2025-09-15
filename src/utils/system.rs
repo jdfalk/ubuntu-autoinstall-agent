@@ -1,5 +1,5 @@
 // file: src/utils/system.rs
-// version: 1.1.1
+// version: 1.1.2
 // guid: w3x4y5z6-a7b8-9012-3456-789012wxyzab
 
 //! System utility functions
@@ -239,4 +239,4 @@ mod tests {
     }
 }
 
-extern crate libc;
+// moved: extern crate libc is unnecessary in Rust 2018+; remove to satisfy clippy items-after-test-module
