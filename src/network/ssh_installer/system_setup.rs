@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/system_setup.rs
-// version: 1.16.2
+// version: 1.16.3
 // guid: sshsys01-2345-6789-abcd-ef0123456789
 
 //! System setup and configuration for SSH installation
@@ -417,11 +417,12 @@ impl<'a> SystemConfigurator<'a> {
             )
             .await;
         // Fix zfs-list cache paths from host (not inside chroot), replacing /mnt/targetos prefixes with /
-        let _ = self.log_and_execute(
-            "Fix zfs-list paths",
-            "sed -Ei 's|/mnt/targetos/?|/|' /mnt/targetos/etc/zfs/zfs-list.cache/* || true",
-        )
-        .await;
+        let _ = self
+            .log_and_execute(
+                "Fix zfs-list paths",
+                "sed -Ei 's|/mnt/targetos/?|/|' /mnt/targetos/etc/zfs/zfs-list.cache/* || true",
+            )
+            .await;
         let _ = self
             .log_and_execute(
                 "Update initramfs (post-ZFS)",
@@ -621,9 +622,9 @@ impl<'a> SystemConfigurator<'a> {
                     Ok(())
                 } else {
                     let s = stderr.to_lowercase();
-                    let has_zsys = (
-                        s.contains("zsys") && s.contains("daemon")
-                    ) || s.contains("/run/zsysd.sock") || s.contains("couldn't connect to zsys daemon");
+                    let has_zsys = (s.contains("zsys") && s.contains("daemon"))
+                        || s.contains("/run/zsysd.sock")
+                        || s.contains("couldn't connect to zsys daemon");
 
                     if has_zsys {
                         warn!(
