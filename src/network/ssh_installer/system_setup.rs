@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/system_setup.rs
-// version: 1.16.0
+// version: 1.16.1
 // guid: sshsys01-2345-6789-abcd-ef0123456789
 
 //! System setup and configuration for SSH installation
@@ -416,7 +416,12 @@ impl<'a> SystemConfigurator<'a> {
                 "chroot /mnt/targetos bash -lc 'timeout 5 zed -F || true'",
             )
             .await;
-        let _ = self.log_and_execute("Fix zfs-list paths", "chroot /mnt/targetos bash -lc 'sed -Ei \"s|/mnt/targetos/?|/|\" /etc/zfs/zfs-list.cache/* || true'").await;
+        // Fix zfs-list cache paths from host (not inside chroot), replacing /mnt/targetos prefixes with /
+        let _ = self.log_and_execute(
+            "Fix zfs-list paths",
+            "sed -Ei 's|/mnt/targetos/?|/|' /mnt/targetos/etc/zfs/zfs-list.cache/* || true",
+        )
+        .await;
         let _ = self
             .log_and_execute(
                 "Update initramfs (post-ZFS)",
