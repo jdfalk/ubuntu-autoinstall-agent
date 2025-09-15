@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/system_setup.rs
-// version: 1.15.0
+// version: 1.16.0
 // guid: sshsys01-2345-6789-abcd-ef0123456789
 
 //! System setup and configuration for SSH installation
@@ -7,7 +7,7 @@
 use super::config::InstallationConfig;
 use crate::network::SshClient;
 use crate::Result;
-use tracing::info;
+use tracing::{info, warn};
 
 pub struct SystemConfigurator<'a> {
     ssh: &'a mut SshClient,
@@ -334,12 +334,10 @@ impl<'a> SystemConfigurator<'a> {
         ];
 
         for cmd in chroot_commands {
-            let _ = self
-                .log_and_execute(
-                    &format!("Chroot: {}", cmd),
-                    &format!("chroot /mnt/targetos bash -lc '{}'", cmd),
-                )
-                .await;
+            let desc = format!("Chroot: {}", cmd);
+            let wrapped = format!("chroot /mnt/targetos bash -lc '{}'", cmd);
+            // Use tolerant runner to ignore benign zsys errors during apt operations
+            self.run_tolerating_zsys_errors(&desc, &wrapped).await?;
         }
 
         // Generate /etc/hostid to aid ZFS import on boot (prefer zgenhostid, fallback to hostid)
@@ -597,6 +595,44 @@ impl<'a> SystemConfigurator<'a> {
     async fn log_and_execute(&mut self, description: &str, command: &str) -> Result<()> {
         info!("Executing: {} -> {}", description, command);
         self.ssh.execute(command).await
+    }
+
+    /// Execute a command but tolerate known benign zsys errors that may surface in chroot/container
+    /// contexts where zsysd is not running. If the command fails and stderr contains any of the
+    /// tolerated patterns, emit a warning and return Ok(()).
+    async fn run_tolerating_zsys_errors(&mut self, description: &str, command: &str) -> Result<()> {
+        // Fast path: try normal execution first
+        match self.ssh.execute(command).await {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                // Re-run collecting output to inspect stderr for zsys patterns
+                let (code, _stdout, stderr) = self
+                    .ssh
+                    .execute_with_error_collection(command, description)
+                    .await?;
+
+                // If exit succeeded despite earlier error type mapping, accept it
+                if code == 0 {
+                    return Ok(());
+                }
+
+                let s = stderr.to_lowercase();
+                let has_zsys = (
+                    s.contains("zsys") && s.contains("daemon")
+                ) || s.contains("/run/zsysd.sock") || s.contains("couldn't connect to zsys daemon");
+
+                if has_zsys {
+                    warn!(
+                        "Ignoring benign zsys error for '{}': exit={} stderr={}",
+                        description, code, stderr
+                    );
+                    return Ok(());
+                }
+
+                // Not a tolerated error; return the original error
+                return Err(e);
+            }
+        }
     }
 }
 
