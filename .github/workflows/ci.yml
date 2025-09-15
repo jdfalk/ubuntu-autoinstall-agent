@@ -1,5 +1,5 @@
 # file: .github/workflows/ci.yml
-# version: 1.21.2
+# version: 1.21.3
 # guid: f1a2b3c4-d5e6-f7a8-b9c0-d1e2f3a4b5c6
 
 name: Continuous Integration
@@ -574,10 +574,14 @@ jobs:
             cargo install cargo-llvm-cov --locked
           fi
 
-      - name: Generate coverage report (LCOV + HTML)
+      - name: Generate LCOV report
+        run: |
+          cargo llvm-cov --workspace --verbose --lcov --output-path lcov.info
+
+      - name: Generate HTML coverage report
         run: |
           mkdir -p htmlcov
-          cargo llvm-cov --workspace --verbose --lcov --output-path lcov.info --html --output-dir htmlcov
+          cargo llvm-cov --workspace --verbose --html --output-dir htmlcov
 
       - name: Compute total coverage
         id: coverage

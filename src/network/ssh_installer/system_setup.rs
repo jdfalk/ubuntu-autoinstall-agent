@@ -1,5 +1,5 @@
 // file: src/network/ssh_installer/system_setup.rs
-// version: 1.16.1
+// version: 1.16.2
 // guid: sshsys01-2345-6789-abcd-ef0123456789
 
 //! System setup and configuration for SSH installation
@@ -608,7 +608,7 @@ impl<'a> SystemConfigurator<'a> {
     async fn run_tolerating_zsys_errors(&mut self, description: &str, command: &str) -> Result<()> {
         // Fast path: try normal execution first
         match self.ssh.execute(command).await {
-            Ok(()) => return Ok(()),
+            Ok(()) => Ok(()),
             Err(e) => {
                 // Re-run collecting output to inspect stderr for zsys patterns
                 let (code, _stdout, stderr) = self
@@ -618,24 +618,24 @@ impl<'a> SystemConfigurator<'a> {
 
                 // If exit succeeded despite earlier error type mapping, accept it
                 if code == 0 {
-                    return Ok(());
+                    Ok(())
+                } else {
+                    let s = stderr.to_lowercase();
+                    let has_zsys = (
+                        s.contains("zsys") && s.contains("daemon")
+                    ) || s.contains("/run/zsysd.sock") || s.contains("couldn't connect to zsys daemon");
+
+                    if has_zsys {
+                        warn!(
+                            "Ignoring benign zsys error for '{}': exit={} stderr={}",
+                            description, code, stderr
+                        );
+                        Ok(())
+                    } else {
+                        // Not a tolerated error; return the original error
+                        Err(e)
+                    }
                 }
-
-                let s = stderr.to_lowercase();
-                let has_zsys = (
-                    s.contains("zsys") && s.contains("daemon")
-                ) || s.contains("/run/zsysd.sock") || s.contains("couldn't connect to zsys daemon");
-
-                if has_zsys {
-                    warn!(
-                        "Ignoring benign zsys error for '{}': exit={} stderr={}",
-                        description, code, stderr
-                    );
-                    return Ok(());
-                }
-
-                // Not a tolerated error; return the original error
-                return Err(e);
             }
         }
     }
