@@ -555,7 +555,7 @@ jobs:
 
       - name: Generate coverage report (LCOV + HTML)
         run: |
-          cargo llvm-cov --workspace --lcov --output-path lcov.info --html --html-out htmlcov
+          cargo llvm-cov --workspace --lcov --output-path lcov.info --html --output-dir htmlcov
 
       - name: Compute total coverage
         id: coverage
