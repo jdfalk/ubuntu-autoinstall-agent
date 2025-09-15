@@ -1,5 +1,5 @@
 <!-- file: .github/copilot-instructions.md -->
-<!-- version: 2.0.0 -->
+<!-- version: 2.1.0 -->
 <!-- guid: 4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f9a -->
 
 # Copilot/AI Agent Coding Instructions System
@@ -8,28 +8,9 @@ This repository uses a centralized, modular system for Copilot/AI agent coding,
 documentation, and workflow instructions, following the latest VS Code Copilot
 customization best practices.
 
-## 🚨 CRITICAL: Documentation Update Protocol
+## Documentation Updates
 
-**NEVER edit markdown files directly. ALWAYS use the documentation update
-system:**
-
-1. **Create GitHub Issue First** (if none exists):
-
-   ```bash
-   ./scripts/create-issue-update.sh "Update [filename] - [description]" "Detailed description of what needs to be updated"
-   ```
-
-2. **Create Documentation Update**:
-
-   ```bash
-   ./scripts/create-doc-update.sh [filename] "[content]" [mode] --issue [issue-number]
-   ```
-
-3. **Link to Issue**: Every documentation change MUST reference a GitHub issue
-   for tracking and context.
-
-**Failure to follow this protocol will result in workflow conflicts and lost
-changes.**
+Documentation files in `.github/instructions/` can be edited directly in this repository. Keep changes concise and consistent with the language-specific guidance. If conflicts arise during merges, resolve them directly in the affected files.
 
 ## System Overview
 

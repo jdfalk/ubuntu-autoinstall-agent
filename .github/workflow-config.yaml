@@ -1,5 +1,5 @@
 # file: .github/workflow-config.yaml
-# version: 2.1.0
+# version: 2.2.0
 # guid: e5f6a7b8-c9d0-1234-ef56-789012345678
 
 # Modern Workflow Configuration
@@ -102,7 +102,7 @@ sync:
   # Paths to sync across repositories
   sync_paths:
     - ".github/workflows/ci.yml"
-    - ".github/workflows/docs-automation.yml"
+  # - ".github/workflows/docs-automation.yml" # deprecated
     - ".github/workflows/release-go.yml"
     - ".github/workflows/release-rust.yml"
     - ".github/workflows/release-python.yml"
@@ -120,8 +120,8 @@ sync:
     - ".github/dependabot.yml"
     - ".github/copilot-instructions.md"
     - ".pre-commit-config.yaml"
-    - "doc_update_manager.py"
-    - "scripts/create-doc-update.sh"
+  # - "doc_update_manager.py" # deprecated
+  # - "scripts/create-doc-update.sh" # deprecated
     - "scripts/workflow_manager.py"
     - "labels.json"
     - "labels.md"
@@ -144,7 +144,7 @@ sync:
     - "pyproject.toml" # Python project config
     - "buf.yaml" # Protocol buffer config (repo-specific)
     - "buf.gen.yaml" # Protocol buffer generation config (repo-specific)
-    - ".github/doc-updates/" # Repository-specific documentation updates
+  # - ".github/doc-updates/" # deprecated
     - "proto/" # Protocol buffer definitions (repo-specific)
     - "sdks/" # Generated SDK output (repo-specific)
 

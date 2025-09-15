@@ -1,5 +1,5 @@
 <!-- file: .github/CLAUDE.md -->
-<!-- version: 2.0.0 -->
+<!-- version: 2.1.0 -->
 <!-- guid: 3c4d5e6f-7a8b-9c0d-1e2f-3a4b5c6d7e8f -->
 
 # CLAUDE.md
@@ -8,28 +8,9 @@
 > instructions are now centralized in the `.github/instructions/` and
 > `.github/prompts/` directories.
 
-## 🚨 CRITICAL: Documentation Update Protocol
+## Documentation Updates
 
-**NEVER edit markdown files directly. ALWAYS use the documentation update
-system:**
-
-1. **Create GitHub Issue First** (if none exists):
-
-   ```bash
-   ./scripts/create-issue-update.sh "Update [filename] - [description]" "Detailed description of what needs to be updated"
-   ```
-
-2. **Create Documentation Update**:
-
-   ```bash
-   ./scripts/create-doc-update.sh [filename] "[content]" [mode] --issue [issue-number]
-   ```
-
-3. **Link to Issue**: Every documentation change MUST reference a GitHub issue
-   for tracking and context.
-
-**Failure to follow this protocol will result in workflow conflicts and lost
-changes.**
+Documentation files in `.github/instructions/` can be edited directly in this repository. Keep changes concise and consistent with the language-specific guidance. If conflicts arise during merges, resolve them directly in the affected files.
 
 ## Canonical Source for Agent Instructions
 

@@ -1,5 +1,5 @@
 <!-- file: .github/instructions/rust.instructions.md -->
-<!-- version: 1.0.0 -->
+<!-- version: 1.1.0 -->
 <!-- guid: b2c3d4e5-f6a7-8901-2345-678901bcdef0 -->
 
 ---
@@ -179,11 +179,12 @@ This header must come immediately after any shebang line but before all other co
 
 ## Tools
 
-- Use `cargo fmt` for automatic formatting
-- Use `cargo clippy` for additional linting
-- Use `cargo doc` to generate documentation
-- Use `cargo test` for running tests
-- Use `cargo bench` for benchmarking
+- Use `cargo fmt` for automatic formatting. CI enforces formatting with `cargo fmt -- --check`.
+- Use `cargo clippy` for linting. CI treats clippy warnings as failures unless explicitly allowed.
+- Use `cargo test` for running unit and integration tests. CI requires `cargo test --all` to pass.
+- Use `cargo llvm-cov` (or CI coverage job) to inspect coverage locally. CI enforces a minimum coverage threshold (currently 80%).
+- Use `cargo doc` to generate documentation.
+- Use `cargo bench` for benchmarking.
 
 ## Best Practices
 
