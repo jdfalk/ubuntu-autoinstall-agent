@@ -1,9 +1,0 @@
-{
-  "id": "b8d9f4e2-5a1b-4b77-9f52-6f8b9a2f4c3d",
-  "timestamp": "2025-09-15T00:00:00Z",
-  "file": ".github/instructions/rust.instructions.md",
-  "mode": "replace-section",
-  "section": "Tools",
-  "content": "## Tools\n\n- Use `cargo fmt` for automatic formatting (CI enforces rustfmt via \"cargo fmt -- --check\").\n- Use `cargo clippy` for linting (CI runs clippy with warnings-as-errors for \n  pedantic checks; resolve or allow lints with clear justification).\n- Use `cargo test` to run unit and integration tests.\n- Use `cargo llvm-cov` (or CI-provided coverage task) to inspect coverage locally.\n- Use `cargo doc` to generate documentation.\n\n### CI Requirements\n\n- All PRs must pass formatting, linting, and tests before merge.\n- Formatting: `cargo fmt -- --check` must be clean.\n- Linting: `cargo clippy` must pass with no disallowed warnings.\n- Tests: `cargo test --all` must pass.\n- Coverage: The Rust coverage job enforces a minimum threshold (currently 80%).\n  If coverage falls below the threshold, the job fails.\n\nTip: Run `cargo fmt`, then `cargo clippy`, then `cargo test` locally before submitting to avoid CI failures.",
-  "issue": 0
-}

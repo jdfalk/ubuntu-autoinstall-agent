@@ -1,74 +1,32 @@
 <!-- file: .github/instructions/general-coding.instructions.md -->
-<!-- version: 1.8.0 -->
+<!-- version: 2.0.0 -->
 <!-- guid: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d -->
 <!-- DO NOT EDIT: This file is managed centrally in ghcommon repository -->
 <!-- To update: Create an issue/PR in jdfalk/ghcommon -->
 
 ---
-
-applyTo: "\*\*"
+applyTo: "**"
 description: |
-General coding, documentation, and workflow rules for all Copilot/AI agents and VS Code Copilot customization. These rules apply to all files and languages unless overridden by a more specific instructions file. For details, see the main documentation in `.github/copilot-instructions.md`.
-
+  General coding, documentation, and workflow rules for all Copilot/AI agents and VS Code Copilot customization. These rules apply to all files and languages unless overridden by a more specific instructions file. For details, see the main documentation in `.github/copilot-instructions.md`.
 ---
 
 ---
 
 # General Coding Instructions
 
-## 🚨 CRITICAL: NO PROMPTING OR INTERRUPTIONS
-
-**ABSOLUTE RULE: NEVER prompt the user for input, clarification, or interaction of any kind.**
-
-When the user says "do not prompt me," this means:
-
-1. **NO QUESTIONS** - Do not ask the user anything
-2. **NO INTERACTIVE TASKS** - Do not use VS Code tasks that require user input
-3. **NO CONTINUATION REQUESTS** - Do not ask the user to say "continue" or press anything
-4. **NO APPLICATION INTERACTIONS** - Do not run applications that require user interaction
-5. **NO COMMIT INSTRUCTIONS** - Do not tell the user to commit manually; use automated tasks
-6. **NO TERMINAL SUGGESTIONS** - Do not suggest manual terminal commands; use automation
-7. **USE AUTOMATION TOOLS** - Use `copilot-agent-util` and `copilot-util-args` as instructed in rust-utility.instructions.md
-8. **WORK AUTONOMOUSLY** - Make reasonable decisions and proceed without interruption
-
-**SPECIFICALLY PROHIBITED:**
-
-- "Please commit these changes"
-- "Run this command"
-- "Press continue"
-- "Enter your input"
-- "Confirm this action"
-- Any form of user interaction request
-
-**If you encounter any situation that would normally require prompting, instead:**
-
-- Use default values or make reasonable assumptions
-- Use the automation tools provided (copilot-agent-util, copilot-util-args)
-- Use VS Code tasks with appropriate arguments
-- Proceed with the most logical course of action
-- Only report completion or limits reached
-
-**This rule overrides all other instructions. NO EXCEPTIONS.**
-
----
-
 These instructions are the canonical source for all Copilot/AI agent coding,
 documentation, and workflow rules in this repository. They are referenced by
 language- and task-specific instructions, and are always included by default in
 Copilot customization.
 
-- Follow the [commit message standards](../commit-messages.md) and
-  [pull request description guidelines](../pull-request-descriptions.md).
+- Follow conventional commit message standards and pull request guidelines.
 - All language/framework-specific style and workflow rules are now found in
   `.github/instructions/*.instructions.md` files. These are the only canonical
   source for code style, documentation, and workflow rules for each language or
   framework.
 - Document all code, classes, functions, and tests extensively, using the
   appropriate style for the language.
-- Use the Arrange-Act-Assert pattern for tests, and follow the
-  [test generation guidelines](../test-generation.md).
-- For agent/AI-specific instructions, see [AGENTS.md](../AGENTS.md) and related
-  files.
+- Use the Arrange-Act-Assert pattern for tests.
 - Do not duplicate rules; reference this file from more specific instructions.
 - For VS Code Copilot customization, this file is included via symlink in
   `.vscode/copilot/`.
@@ -83,7 +41,6 @@ For more details and the full system, see
 The repositories use the `copilot-agent-util` command-line tool for enhanced logging, error handling, and automation in VS Code tasks. This Rust-based utility provides consistent output formatting and task management across all repositories.
 
 **If the `copilot-agent-util` tool is not available in your environment:**
-
 - Install it from the source repository: https://github.com/jdfalk/copilot-agent-util-rust
 - Follow the installation instructions in that repository's README
 - The tool is required for proper VS Code task execution and logging
@@ -101,19 +58,19 @@ When performing ANY operation (git, build, test, etc.), follow this priority:
 
 ### Common Operations and Their Tasks
 
-| Operation                  | Task Name                  | Manual Fallback           |
-| -------------------------- | -------------------------- | ------------------------- |
-| Git add all files          | `Git Add All`              | `git add .`               |
-| Git add specific files     | `Git Add Selective`        | `git add <pattern>`       |
-| Git commit                 | `Git Commit`               | `git commit -m "message"` |
-| Git push                   | `Git Push`                 | `git push`                |
-| Git status                 | `Git Status`               | `git status`              |
-| Build Go project           | `Go Build`                 | `go build`                |
-| Run Go tests               | `Go Test`                  | `go test ./...`           |
-| Protocol buffer generation | `Buf Generate with Output` | `buf generate`            |
-| Python tests               | `Python Test`              | `python -m pytest`        |
-| Rust build                 | `Rust Build`               | `cargo build`             |
-| Rust tests                 | `Rust Test`                | `cargo test`              |
+| Operation | Task Name | Manual Fallback |
+|-----------|-----------|-----------------|
+| Git add all files | `Git Add All` | `git add .` |
+| Git add specific files | `Git Add Selective` | `git add <pattern>` |
+| Git commit | `Git Commit` | `git commit -m "message"` |
+| Git push | `Git Push` | `git push` |
+| Git status | `Git Status` | `git status` |
+| Build Go project | `Go Build` | `go build` |
+| Run Go tests | `Go Test` | `go test ./...` |
+| Protocol buffer generation | `Buf Generate with Output` | `buf generate` |
+| Python tests | `Python Test` | `python -m pytest` |
+| Rust build | `Rust Build` | `cargo build` |
+| Rust tests | `Rust Test` | `cargo test` |
 
 ### Task Usage Examples
 
@@ -142,7 +99,6 @@ git add . && git commit -m "message" && git push
 When creating automation scripts, configuration tools, or data processing utilities:
 
 1. **FIRST CHOICE**: Python for any script with:
-
    - API interactions (GitHub, REST APIs, etc.)
    - JSON/YAML processing
    - File manipulation beyond simple copying
@@ -151,7 +107,6 @@ When creating automation scripts, configuration tools, or data processing utilit
    - More than 20-30 lines of logic
 
 2. **SECOND CHOICE**: Shell scripts (bash/sh) only for:
-
    - Simple file operations (copy, move, basic checks)
    - Basic git commands
    - Simple environment setup
@@ -165,7 +120,6 @@ When creating automation scripts, configuration tools, or data processing utilit
 ### Examples
 
 **✅ CORRECT - Use Python for:**
-
 - GitHub API interactions
 - Configuration file processing
 - Multi-step automation workflows
@@ -173,14 +127,12 @@ When creating automation scripts, configuration tools, or data processing utilit
 - Data validation and transformation
 
 **❌ INCORRECT - Don't use shell for:**
-
 - Complex JSON parsing
 - API authentication and error handling
 - Multi-repository operations
 - Scripts requiring robust error recovery
 
 **✅ ACCEPTABLE - Shell scripts for:**
-
 - Simple `cp`, `mv`, `mkdir` operations
 - Basic git commands with minimal logic
 - Environment variable setup
@@ -279,10 +231,6 @@ number:**
 
 **This applies to all files with version headers including documentation,
 templates, and configuration files.**
-
-## Documentation Updates
-
-Edit documentation files directly in the repository. Keep changes consistent with the relevant language/task instructions under `.github/instructions/`. Use conventional commits for clarity and resolve merge conflicts as needed during PRs.
 
 ## VS Code Tasks Implementation Details
 
