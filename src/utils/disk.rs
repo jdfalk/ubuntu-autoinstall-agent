@@ -199,7 +199,7 @@ impl DiskUtils {
                 return Err(crate::error::AutoInstallError::DiskError(format!(
                     "Unsupported filesystem type: {}",
                     fs_type
-                )))
+                )));
             }
         };
 

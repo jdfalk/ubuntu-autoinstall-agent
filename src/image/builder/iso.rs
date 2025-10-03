@@ -98,7 +98,7 @@ impl IsoManager {
                 return Err(crate::error::AutoInstallError::ConfigError(format!(
                     "Unsupported Ubuntu version: {}",
                     spec.ubuntu_version
-                )))
+                )));
             }
         };
 

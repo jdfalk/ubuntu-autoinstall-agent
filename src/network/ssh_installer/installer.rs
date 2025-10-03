@@ -49,7 +49,10 @@ impl SshInstaller {
             ));
         }
 
-        info!("Starting full ZFS + LUKS installation for {} (hold-on-failure={}, pause-after-storage={})", config.hostname, hold_on_failure, pause_after_storage);
+        info!(
+            "Starting full ZFS + LUKS installation for {} (hold-on-failure={}, pause-after-storage={})",
+            config.hostname, hold_on_failure, pause_after_storage
+        );
 
         let mut failed_phases: Vec<String> = Vec::new();
         let mut successful_phases: Vec<&str> = Vec::new();
@@ -161,8 +164,12 @@ impl SshInstaller {
     ) -> Result<()> {
         use tracing::warn;
         warn!("=== PAUSE AFTER STORAGE REQUESTED ===");
-        warn!("The installer has completed: partitioning, formatting (ESP/ext4), LUKS setup, and ZFS pools/datasets.");
-        warn!("The next commands that would be executed are listed below. You can run them manually on the target.");
+        warn!(
+            "The installer has completed: partitioning, formatting (ESP/ext4), LUKS setup, and ZFS pools/datasets."
+        );
+        warn!(
+            "The next commands that would be executed are listed below. You can run them manually on the target."
+        );
 
         let cmds = build_next_commands_after_storage(config);
         for c in cmds {
@@ -459,8 +466,10 @@ impl SshInstaller {
                 .unwrap_or(false);
 
         if luks_active || luks_mounted || target_has_mounts || pools_exist {
-            info!("Preflight: residual state detected (luks_active={}, luks_mounted={}, target_mounts={}, pools_exist={}); attempting recovery/reset",
-                luks_active, luks_mounted, target_has_mounts, pools_exist);
+            info!(
+                "Preflight: residual state detected (luks_active={}, luks_mounted={}, target_mounts={}, pools_exist={}); attempting recovery/reset",
+                luks_active, luks_mounted, target_has_mounts, pools_exist
+            );
             let mut disk_manager = DiskManager::new(&mut self.ssh);
             // Best-effort recovery; if it fails we'll still attempt to proceed to capture diagnostics
             let _ = disk_manager.recover_after_failure_and_wipe(config).await;
@@ -802,9 +811,9 @@ mod tests {
         let cmds = build_next_commands_after_storage(&cfg);
 
         // Presence checks
-        assert!(cmds.iter().any(
-            |c| c.starts_with("debootstrap plucky /mnt/targetos http://archive.ubuntu.com/ubuntu/")
-        ));
+        assert!(cmds.iter().any(|c| {
+            c.starts_with("debootstrap plucky /mnt/targetos http://archive.ubuntu.com/ubuntu/")
+        }));
         assert!(cmds
             .iter()
             .any(|c| c.contains("ubuntu.sources") && c.contains("Suites: plucky")));
@@ -857,10 +866,9 @@ mod tests {
     fn test_build_next_commands_honors_release_override() {
         let cfg = sample_config_with_release(Some("noble"));
         let cmds = build_next_commands_after_storage(&cfg);
-        assert!(cmds
-            .iter()
-            .any(|c| c
-                .starts_with("debootstrap noble /mnt/targetos http://archive.ubuntu.com/ubuntu/")));
+        assert!(cmds.iter().any(|c| {
+            c.starts_with("debootstrap noble /mnt/targetos http://archive.ubuntu.com/ubuntu/")
+        }));
         assert!(cmds
             .iter()
             .any(|c| c.contains("ubuntu.sources") && c.contains("Suites: noble")));

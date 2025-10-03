@@ -163,7 +163,12 @@ mod tests {
                 dns_servers: vec!["1.1.1.1".to_string()],
                 dhcp: true,
             },
-            users: vec![UserConfig { name: "admin".to_string(), sudo: true, ssh_keys: vec![], shell: None }],
+            users: vec![UserConfig {
+                name: "admin".to_string(),
+                sudo: true,
+                ssh_keys: vec![],
+                shell: None,
+            }],
             luks_config: LuksConfig::default(),
             packages: vec![],
         }
@@ -197,13 +202,24 @@ mod tests {
         assert!(t.validate().is_err());
 
         // No sudo user
-        t.users = vec![UserConfig { name: "u".to_string(), sudo: false, ssh_keys: vec![], shell: None }];
+        t.users = vec![UserConfig {
+            name: "u".to_string(),
+            sudo: false,
+            ssh_keys: vec![],
+            shell: None,
+        }];
         assert!(t.validate().is_err());
     }
 
     #[test]
     fn test_network_validate() {
-        let mut n = NetworkConfig { interface: "eth0".to_string(), ip_address: None, gateway: None, dns_servers: vec![], dhcp: true };
+        let mut n = NetworkConfig {
+            interface: "eth0".to_string(),
+            ip_address: None,
+            gateway: None,
+            dns_servers: vec![],
+            dhcp: true,
+        };
         assert!(n.validate().is_ok());
 
         // Empty interface
@@ -211,7 +227,13 @@ mod tests {
         assert!(n.validate().is_err());
 
         // Static requires ip and gateway
-        let mut n2 = NetworkConfig { interface: "eth0".to_string(), ip_address: None, gateway: None, dns_servers: vec![], dhcp: false };
+        let mut n2 = NetworkConfig {
+            interface: "eth0".to_string(),
+            ip_address: None,
+            gateway: None,
+            dns_servers: vec![],
+            dhcp: false,
+        };
         assert!(n2.validate().is_err());
         n2.ip_address = Some("192.168.1.10/24".to_string());
         assert!(n2.validate().is_err());

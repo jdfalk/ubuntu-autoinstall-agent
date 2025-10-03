@@ -23,9 +23,9 @@ impl<'a> SystemConfigurator<'a> {
         // Use lsblk key=value format (-P) and grep/sed to extract PATH for the matching PARTTYPE.
         // Safe quoting: outer bash uses double quotes; sed uses single quotes containing double quotes.
         format!(
-                "bash -lc 'lsblk -rP -o PATH,PARTTYPE | grep -i \"PARTTYPE=\\\"{0}\\\"\" | head -n1 | sed -n \"s/.*PATH=\\\"\\([^\\\" ]*\\)\\\".*/\\1/p\"'",
-                guid
-            )
+            "bash -lc 'lsblk -rP -o PATH,PARTTYPE | grep -i \"PARTTYPE=\\\"{0}\\\"\" | head -n1 | sed -n \"s/.*PATH=\\\"\\([^\\\" ]*\\)\\\".*/\\1/p\"'",
+            guid
+        )
     }
 
     /// Build Deb822-style Ubuntu apt sources content for the given release

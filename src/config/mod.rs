@@ -72,10 +72,22 @@ mod tests {
 
     #[test]
     fn test_arch_from_str() {
-        assert!(matches!(Architecture::from_str("amd64"), Ok(Architecture::Amd64)));
-        assert!(matches!(Architecture::from_str("x86_64"), Ok(Architecture::Amd64)));
-        assert!(matches!(Architecture::from_str("arm64"), Ok(Architecture::Arm64)));
-        assert!(matches!(Architecture::from_str("aarch64"), Ok(Architecture::Arm64)));
+        assert!(matches!(
+            Architecture::from_str("amd64"),
+            Ok(Architecture::Amd64)
+        ));
+        assert!(matches!(
+            Architecture::from_str("x86_64"),
+            Ok(Architecture::Amd64)
+        ));
+        assert!(matches!(
+            Architecture::from_str("arm64"),
+            Ok(Architecture::Arm64)
+        ));
+        assert!(matches!(
+            Architecture::from_str("aarch64"),
+            Ok(Architecture::Arm64)
+        ));
         assert!(Architecture::from_str("mips").is_err());
     }
 }

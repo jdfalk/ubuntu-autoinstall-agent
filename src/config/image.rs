@@ -216,7 +216,11 @@ mod tests {
             architecture: Architecture::Amd64,
             base_packages: vec!["openssh-server".to_string()],
             custom_scripts: vec![],
-            vm_config: VmConfig { memory_mb: 2048, disk_size_gb: 20, cpu_cores: 2 },
+            vm_config: VmConfig {
+                memory_mb: 2048,
+                disk_size_gb: 20,
+                cpu_cores: 2,
+            },
         };
         assert!(spec.validate().is_ok());
     }
@@ -241,7 +245,11 @@ mod tests {
             architecture: Architecture::Amd64,
             base_packages: vec![],
             custom_scripts: vec![],
-            vm_config: VmConfig { memory_mb: 512, disk_size_gb: 5, cpu_cores: 0 },
+            vm_config: VmConfig {
+                memory_mb: 512,
+                disk_size_gb: 5,
+                cpu_cores: 0,
+            },
         };
         // Any of the constraints can fail; ensure we get an error
         assert!(spec.validate().is_err());
