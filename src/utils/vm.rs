@@ -343,6 +343,7 @@ impl VmManager {
 
     /// Send command to QEMU monitor
     async fn send_monitor_command(&self, command: &str) -> Result<()> {
+        #[cfg(unix)]
         use tokio::io::AsyncWriteExt;
         #[cfg(unix)]
         use tokio::net::UnixStream;
