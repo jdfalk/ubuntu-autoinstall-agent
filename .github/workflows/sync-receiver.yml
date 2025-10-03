@@ -101,7 +101,7 @@ jobs:
 
             # Fallback to manual sync if Python script fails
             echo "📁 Creating directory structure..."
-            mkdir -p .github/workflows .github/instructions .github/prompts scripts .github/linters .github/scripts
+            mkdir -p .github/workflows .github/instructions .github/prompts scripts .github/scripts
 
             case "$sync_type" in
               "all"|"workflows")
@@ -160,8 +160,20 @@ jobs:
                 if [ -d "ghcommon-source/.github/linters" ]; then
                   for file in ghcommon-source/.github/linters/*; do
                     if [ -f "$file" ]; then
-                      cp "$file" ".github/linters/"
-                      echo "✅ Copied $(basename "$file")"
+                      filename=$(basename "$file")
+                      # Copy linter config files to root directory for direct access
+                      case "$filename" in
+                        super-linter-*.env|.markdownlint.json|.yaml-lint.yml|clippy.toml|rustfmt.toml|.eslintrc.yml|.prettierrc|.pylintrc|.python-black|.golangci.yml)
+                          cp "$file" "./"
+                          echo "✅ Copied $filename to root directory"
+                          ;;
+                        *)
+                          # Keep other files in .github/linters for compatibility
+                          mkdir -p ".github/linters"
+                          cp "$file" ".github/linters/"
+                          echo "✅ Copied $filename to .github/linters/"
+                          ;;
+                      esac
                     fi
                   done
                 fi
@@ -195,13 +207,8 @@ jobs:
             esac
           }
 
-          # Create symlinks for linters
-          echo "🔗 Setting up linter symlinks..."
-          mkdir -p .vscode
-          if [ -d ".github/linters" ] && [ ! -e ".vscode/linters" ]; then
-            ln -sf ../.github/linters .vscode/linters
-            echo "✅ Created symlink: .vscode/linters -> ../.github/linters"
-          fi
+          # Linter configuration files are now in root directory for direct access
+          echo "✅ Linter configuration files available in root directory"
 
           # Clean up the source directory
           echo "🧹 Cleaning up source directory..."

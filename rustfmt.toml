@@ -1,0 +1,31 @@
+
+# file: rustfmt.toml
+# version: 1.2.0
+# guid: 5e6f7a8b-9c0d-1234-ef56-789abcdef012
+
+# Rust formatting configuration using only stable features
+# This config uses only the most basic rustfmt options to avoid warnings
+
+# Basic formatting
+max_width = 100
+hard_tabs = false
+tab_spaces = 4
+newline_style = "Unix"
+
+# Import management
+reorder_imports = true
+reorder_modules = true
+
+# Basic function formatting
+fn_params_layout = "Tall"
+
+# Expression formatting
+chain_width = 60
+single_line_if_else_max_width = 50
+
+# Basic options
+force_explicit_abi = true
+merge_derives = true
+remove_nested_parens = true
+use_field_init_shorthand = false
+use_try_shorthand = false

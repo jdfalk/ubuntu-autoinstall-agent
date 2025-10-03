@@ -1,0 +1,88 @@
+
+# file: clippy.toml
+# file: .github/linters/clippy.toml
+# version: 1.1.0# version: 1.0.0
+# guid: 6f7a8b9c-0d1e-2345-f678-9abcdef01234# guid: 6f7a8b9c-0d1e-2345-f678-9abcdef01234
+
+# Clippy configuration for Rust linting# Clippy configuration for Rust linting
+# Using only stable and supported clippy configuration options# Following Rust best practices and performance guidelines
+# Cognitive complexity threshold (replaces deprecated cyclomatic-complexity-threshold)# Cognitive complexity threshold
+
+cognitive-complexity-threshold = 25
+
+# API breaking changes
+avoid-breaking-exported-api = true
+# Documentation requirements
+missing-docs-in-crate-items = true
+# Type complexity threshold
+type-complexity-threshold = 250
+
+# Vector and box size thresholds
+vec-box-size-threshold = 4096
+
+trivial-copy-size-limit = 128
+
+
+# Function parameter limits
+too-many-arguments-threshold = 7
+
+# Enum and struct thresholds
+enum-variant-size-threshold = 200
+
+large-error-threshold = 128
+
+# Arithmetic side effects
+arithmetic-side-effects-allowed = ["Size", "Offset"]
+
+# Stack and array size limits
+array-size-threshold = 512000
+stack-size-threshold = 512000
+
+
+# Pass by value size limits
+pass-by-value-size-limit = 256
+
+# Large error types threshold
+# large-error-types-threshold = 128
+
+
+
+# Literal and naming thresholds
+literal-representation-threshold = 8
+
+# Large futures threshold
+# large-futures-threshold = 16384
+
+single-char-binding-names-threshold = 4
+
+# Large stack arrays threshold
+# large-stack-arrays-threshold = 512000
+
+# Disallowed methods for better practices
+
+# disallowed-methods = [
+#
+#    "std::env::set_var",  # Prefer safer alternatives
+#
+#    "std::process::exit", # Use proper error handling
+#
+#]
+
+
+# Large types passed by value threshold
+# large-types-passed-by-value-threshold = 256
+
+# Maximum trait bounds
+max-trait-bounds = 3
+
+# Maximum function lines
+max-fn-params-bools = 3
+
+# String literal threshold
+# string-literal-chars-threshold = 120
+
+# Upper case acronyms aggressive
+upper-case-acronyms-aggressive = false
+
+# Verbose bit mask threshold
+verbose-bit-mask-threshold = 1
