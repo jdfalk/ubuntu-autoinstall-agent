@@ -329,7 +329,7 @@ impl VmManager {
             }
 
             // Log progress periodically
-            if start_time.elapsed().as_secs() % 300 == 0 {
+            if start_time.elapsed().as_secs().is_multiple_of(300) {
                 // Every 5 minutes
                 info!(
                     "Installation in progress... elapsed: {:?}",

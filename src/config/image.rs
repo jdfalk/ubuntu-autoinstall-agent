@@ -6,7 +6,9 @@
 
 use super::Architecture;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::path::PathBuf;
+use tokio::io::AsyncReadExt;
 
 /// Golden image specification for building Ubuntu images
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -125,6 +127,83 @@ impl ImageSpec {
     }
 }
 
+impl ImageInfo {
+    /// Create new image info with generated ID
+    pub fn new(
+        ubuntu_version: String,
+        architecture: Architecture,
+        size_bytes: u64,
+        checksum: String,
+        path: PathBuf,
+    ) -> Self {
+        let id = format!(
+            "ubuntu-{}-{}-{}",
+            ubuntu_version,
+            architecture.as_str(),
+            &checksum[..checksum.len().min(8)]
+        );
+        Self {
+            id,
+            ubuntu_version,
+            architecture,
+            size_bytes,
+            checksum,
+            path,
+            created_at: chrono::Utc::now(),
+        }
+    }
+
+    /// Get human-readable size
+    pub fn size_human(&self) -> String {
+        let size = self.size_bytes as f64;
+        if size >= 1_073_741_824.0 {
+            format!("{:.1} GB", size / 1_073_741_824.0)
+        } else if size >= 1_048_576.0 {
+            format!("{:.1} MB", size / 1_048_576.0)
+        } else if size >= 1024.0 {
+            format!("{:.1} KB", size / 1024.0)
+        } else {
+            format!("{} bytes", self.size_bytes)
+        }
+    }
+
+    /// Check if image file exists
+    pub fn exists(&self) -> bool {
+        self.path.exists()
+    }
+
+    /// Get file extension
+    pub fn extension(&self) -> Option<&str> {
+        self.path.extension()?.to_str()
+    }
+
+    /// Validate image file integrity
+    pub async fn validate_integrity(&self) -> Result<bool, std::io::Error> {
+        if !self.exists() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Image file not found: {:?}", self.path),
+            ));
+        }
+
+        // Calculate checksum of the file
+        let mut file = tokio::fs::File::open(&self.path).await?;
+        let mut hasher = Sha256::new();
+        let mut buffer = vec![0; 8192];
+
+        loop {
+            let bytes_read = file.read(&mut buffer).await?;
+            if bytes_read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..bytes_read]);
+        }
+
+        let calculated_checksum = format!("{:x}", hasher.finalize());
+        Ok(calculated_checksum == self.checksum)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -179,40 +258,5 @@ mod tests {
         );
         let h = info.size_human();
         assert!(h.ends_with("MB") || h.ends_with("MiB"));
-    }
-}
-
-impl ImageInfo {
-    /// Create new image info with generated ID
-    pub fn new(
-        ubuntu_version: String,
-        architecture: Architecture,
-        size_bytes: u64,
-        checksum: String,
-        path: PathBuf,
-    ) -> Self {
-        Self {
-            id: uuid::Uuid::new_v4().to_string(),
-            ubuntu_version,
-            architecture,
-            created_at: chrono::Utc::now(),
-            size_bytes,
-            checksum,
-            path,
-        }
-    }
-
-    /// Get human-readable size
-    pub fn size_human(&self) -> String {
-        const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
-        let mut size = self.size_bytes as f64;
-        let mut unit_index = 0;
-
-        while size >= 1024.0 && unit_index < UNITS.len() - 1 {
-            size /= 1024.0;
-            unit_index += 1;
-        }
-
-        format!("{:.2} {}", size, UNITS[unit_index])
     }
 }
