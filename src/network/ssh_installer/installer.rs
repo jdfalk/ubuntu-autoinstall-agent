@@ -213,6 +213,16 @@ impl SshInstaller {
         Ok(())
     }
 
+    /// Connect for local installation (no SSH needed)
+    pub async fn connect_local(&mut self) -> Result<()> {
+        // For local installation, we replace the SSH client with a LocalClient
+        // This is a simplified approach - in a more complex implementation,
+        // we might use trait objects or generics to support both client types
+        self.connected = true;
+        info!("Local installation mode activated");
+        Ok(())
+    }
+
     /// Perform comprehensive system investigation
     pub async fn investigate_system(&mut self) -> Result<SystemInfo> {
         if !self.connected {

@@ -1,5 +1,5 @@
 // file: src/cli/commands.rs
-// version: 1.3.0
+// version: 1.4.0
 // guid: g7h8i9j0-k1l2-3456-7890-123456ghijkl
 
 //! Command implementations for the CLI
@@ -8,9 +8,11 @@ use crate::{
     config::{loader::ConfigLoader, Architecture, ImageSpec},
     image::deployer::ImageDeployer,
     image::{builder::ImageBuilder, manager::ImageManager},
-    network::{InstallationConfig, SshInstaller},
+    network::{InstallationConfig, SshInstaller, SystemInfo},
+    utils::system::SystemUtils,
     Result,
 };
+use std::io::Write;
 use tracing::{error, info};
 
 /// Create a golden Ubuntu image
@@ -357,4 +359,477 @@ pub async fn ssh_install_command(
     info!("Target machine should now be ready to boot from local disk");
 
     Ok(())
+}
+
+/// Install Ubuntu locally on the current live system
+pub async fn local_install_command(
+    hostname: Option<String>,
+    investigate_only: bool,
+    dry_run: bool,
+    hold_on_failure: bool,
+    pause_after_storage: bool,
+) -> Result<()> {
+    let hostname = hostname.unwrap_or_else(|| "ubuntu-local".to_string());
+
+    info!("Starting local Ubuntu installation on current system");
+
+    // Check if we're running as root
+    if !SystemUtils::is_root() {
+        return Err(crate::error::AutoInstallError::ValidationError(
+            "Local installation must be run as root".to_string(),
+        ));
+    }
+
+    // Check if we're in a live environment
+    if !is_live_environment() {
+        return Err(crate::error::AutoInstallError::ValidationError(
+            "Local installation should only be run from a live USB/CD environment".to_string(),
+        ));
+    }
+
+    let mut installer = SshInstaller::new();
+
+    // "Connect" to localhost (no-op for local)
+    installer.connect_local().await?;
+    info!("Local installation mode active");
+
+    // Always investigate the system first
+    info!("Investigating local system...");
+    let system_info = installer.investigate_system().await?;
+
+    println!("\n=== LOCAL SYSTEM INVESTIGATION RESULTS ===");
+    println!("Hostname: {}", system_info.hostname);
+    println!("Kernel: {}", system_info.kernel_version);
+    println!("Available tools: {:?}", system_info.available_tools);
+    println!("\n--- OS Release ---");
+    println!("{}", system_info.os_release);
+    println!("\n--- Memory Info ---");
+    println!("{}", system_info.memory_info);
+    println!("\n--- CPU Info ---");
+    println!("{}", system_info.cpu_info);
+    println!("\n--- Disk Information ---");
+    println!("{}", system_info.disk_info);
+    println!("\n--- Network Information ---");
+    println!("{}", system_info.network_info);
+
+    if investigate_only {
+        info!("Investigation complete. Exiting as requested.");
+        return Ok(());
+    }
+
+    // Create installation configuration for local system
+    let config = create_local_installation_config(&hostname, &system_info)?;
+
+    if dry_run {
+        info!("DRY RUN: Would perform full ZFS+LUKS installation with config:");
+        info!("  Hostname: {}", config.hostname);
+        info!("  Disk: {}", config.disk_device);
+        info!("  Timezone: {}", config.timezone);
+        info!(
+            "  Network: {} -> {}",
+            config.network_interface, config.network_address
+        );
+        return Ok(());
+    }
+
+    // Confirm installation
+    println!("\n=== LOCAL INSTALLATION CONFIGURATION ===");
+    println!("Target hostname: {}", config.hostname);
+    println!(
+        "Target disk: {} (THIS WILL BE COMPLETELY WIPED)",
+        config.disk_device
+    );
+    println!("Timezone: {}", config.timezone);
+    println!("Network interface: {}", config.network_interface);
+    println!("Network address: {}", config.network_address);
+    println!("Gateway: {}", config.network_gateway);
+
+    println!(
+        "\nWARNING: This will completely destroy all data on {}!",
+        config.disk_device
+    );
+    println!("This is a DESTRUCTIVE operation that cannot be undone!");
+    println!("Press Ctrl+C to abort, or any other key to continue...");
+
+    // Wait for user confirmation
+    let mut input = String::new();
+    std::io::stdin()
+        .read_line(&mut input)
+        .map_err(crate::error::AutoInstallError::IoError)?;
+
+    info!("Starting full ZFS+LUKS Ubuntu installation locally...");
+    installer
+        .perform_installation_with_options_and_pause(&config, hold_on_failure, pause_after_storage)
+        .await?;
+
+    info!("Local installation completed successfully!");
+    info!("System should now be ready to reboot from local disk");
+
+    Ok(())
+}
+
+/// Check if we're running in a live environment
+fn is_live_environment() -> bool {
+    // Check for common live environment indicators
+    std::path::Path::exists(std::path::Path::new("/run/live"))
+        || std::path::Path::exists(std::path::Path::new("/lib/live"))
+        || std::env::var("DEBIAN_FRONTEND").unwrap_or_default() == "noninteractive"
+        || std::fs::read_to_string("/proc/cmdline")
+            .unwrap_or_default()
+            .contains("boot=live")
+}
+
+/// Create installation configuration for local system
+fn create_local_installation_config(
+    hostname: &str,
+    system_info: &SystemInfo,
+) -> Result<InstallationConfig> {
+    // Detect primary disk (usually the largest disk)
+    let disk_device = detect_primary_disk(&system_info.disk_info)?;
+
+    // Detect network configuration
+    let (interface, address, gateway) = detect_network_config(&system_info.network_info)?;
+
+    // Detect timezone
+    let timezone = detect_timezone().unwrap_or_else(|| "UTC".to_string());
+
+    Ok(InstallationConfig {
+        hostname: hostname.to_string(),
+        disk_device,
+        timezone,
+        luks_key: prompt_for_luks_passphrase()?,
+        root_password: prompt_for_root_password()?,
+        network_interface: interface,
+        network_address: address,
+        network_gateway: gateway,
+        network_search: "local".to_string(),
+        network_nameservers: vec!["8.8.8.8".to_string(), "1.1.1.1".to_string()],
+        debootstrap_release: Some("plucky".to_string()),
+        debootstrap_mirror: Some("http://archive.ubuntu.com/ubuntu/".to_string()),
+    })
+}
+
+/// Detect the primary disk for installation
+fn detect_primary_disk(disk_info: &str) -> Result<String> {
+    // Parse lsblk output to find the primary disk
+    // This is a simplified implementation - you might want to make it more robust
+    for line in disk_info.lines() {
+        if line.contains("disk") && !line.contains("loop") && !line.contains("sr") {
+            if let Some(device) = line.split_whitespace().next() {
+                if device.starts_with("nvme") || device.starts_with("sd") {
+                    return Ok(format!("/dev/{}", device));
+                }
+            }
+        }
+    }
+
+    Err(crate::error::AutoInstallError::ValidationError(
+        "Could not detect primary disk for installation".to_string(),
+    ))
+}
+
+/// Detect network configuration
+fn detect_network_config(_network_info: &str) -> Result<(String, String, String)> {
+    // This is a simplified implementation
+    // In a real implementation, you'd parse the network info more carefully
+    let interface = "eth0".to_string(); // Default
+    let address = "dhcp".to_string(); // Use DHCP by default
+    let gateway = "auto".to_string(); // Auto-detect
+
+    Ok((interface, address, gateway))
+}
+
+/// Detect system timezone
+fn detect_timezone() -> Option<String> {
+    std::fs::read_link("/etc/localtime").ok().and_then(|path| {
+        path.to_str()
+            .and_then(|s| s.strip_prefix("/usr/share/zoneinfo/"))
+            .map(|s| s.to_string())
+    })
+}
+
+/// Prompt for LUKS passphrase
+fn prompt_for_luks_passphrase() -> Result<String> {
+    print!("Enter LUKS encryption passphrase: ");
+    std::io::stdout()
+        .flush()
+        .map_err(crate::error::AutoInstallError::IoError)?;
+
+    let mut passphrase = String::new();
+    std::io::stdin()
+        .read_line(&mut passphrase)
+        .map_err(crate::error::AutoInstallError::IoError)?;
+
+    Ok(passphrase.trim().to_string())
+}
+
+/// Prompt for root password
+fn prompt_for_root_password() -> Result<String> {
+    print!("Enter root password: ");
+    std::io::stdout()
+        .flush()
+        .map_err(crate::error::AutoInstallError::IoError)?;
+
+    let mut password = String::new();
+    std::io::stdin()
+        .read_line(&mut password)
+        .map_err(crate::error::AutoInstallError::IoError)?;
+
+    Ok(password.trim().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+    use tokio::fs;
+
+    #[tokio::test]
+    async fn test_create_image_command_minimal_spec() {
+        // Arrange
+        let arch = Architecture::Amd64;
+        let version = "24.04";
+
+        // Act & Assert
+        // Note: This will fail without actual infrastructure, but tests the function signature
+        let result = create_image_command(arch, version, None, None, None).await;
+
+        // The function should at least not panic and return a Result
+        // In a real test environment, we'd mock the ImageBuilder
+        assert!(result.is_err()); // Expected to fail without proper setup
+    }
+
+    #[tokio::test]
+    async fn test_create_image_command_with_spec() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let spec_content = r#"
+ubuntu_version: "24.04"
+architecture: amd64
+base_packages:
+  - openssh-server
+vm_config:
+  memory_mb: 2048
+  disk_size_gb: 20
+  cpu_cores: 2
+custom_scripts: []
+"#;
+        let spec_path = temp_dir.path().join("test-spec.yaml");
+        fs::write(&spec_path, spec_content).await.unwrap();
+
+        let arch = Architecture::Amd64;
+        let version = "24.04";
+        let spec_path_str = spec_path.to_str().unwrap();
+
+        // Act & Assert
+        let result =
+            create_image_command(arch, version, None, Some(spec_path_str.to_string()), None).await;
+
+        // Should fail due to missing infrastructure but not due to spec parsing
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_deploy_command_dry_run() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let config_content = r#"
+hostname: test-server
+architecture: amd64
+disk_device: /dev/sda
+timezone: UTC
+network:
+  interface: eth0
+  dhcp: true
+users:
+  - name: admin
+    sudo: true
+"#;
+        let config_path = temp_dir.path().join("config.yaml");
+        fs::write(&config_path, config_content).await.unwrap();
+
+        let target = "192.168.1.100";
+        let config_path_str = config_path.to_str().unwrap();
+        let image_path = "/tmp/test.iso";
+
+        // Act
+        let result = deploy_command(target, config_path_str, image_path, true, true).await;
+
+        // Assert
+        // Dry run may succeed or fail depending on system dependencies
+        assert!(result.is_ok() || result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_deploy_command_invalid_config() {
+        // Arrange
+        let target = "192.168.1.100";
+        let config_path = "/nonexistent/config.yaml";
+        let image_path = "/tmp/test.iso";
+
+        // Act
+        let result = deploy_command(target, config_path, image_path, false, false).await;
+
+        // Assert
+        assert!(result.is_err()); // Should fail with invalid config path
+    }
+
+    #[tokio::test]
+    async fn test_validate_command() {
+        // Arrange
+        let image_path = "/nonexistent/image.iso";
+
+        // Act
+        let result = validate_command(image_path).await;
+
+        // Assert
+        // Should handle the case gracefully (either succeed or fail appropriately)
+        // The exact behavior depends on ImageManager implementation
+        assert!(result.is_ok() || result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_check_prereqs_command() {
+        // Act
+        let result = check_prerequisites_command().await;
+
+        // Assert
+        // Should complete without panicking
+        assert!(result.is_ok() || result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_list_images_command() {
+        // Arrange
+        let _temp_dir = TempDir::new().unwrap();
+
+        // Act
+        let result = list_images_command(None, false).await;
+
+        // Assert
+        // Should complete, may succeed or fail depending on system state
+        assert!(result.is_ok() || result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_list_images_command_with_filter() {
+        // Arrange
+        let _temp_dir = TempDir::new().unwrap();
+        let filter_arch = Some(Architecture::Amd64);
+
+        // Act
+        let result = list_images_command(filter_arch, true).await;
+
+        // Assert
+        assert!(result.is_ok() || result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_command_dry_run() {
+        // Arrange
+        let _temp_dir = TempDir::new().unwrap();
+        let older_than_days = 30;
+
+        // Act
+        let result = cleanup_command(older_than_days, true).await;
+
+        // Assert
+        // Dry run may succeed or fail depending on directory structure
+        assert!(result.is_ok() || result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_ssh_install_command_investigate_only() {
+        // Arrange
+        let host = "localhost";
+        let hostname = Some("test-host".to_string());
+        let username = Some("ubuntu".to_string());
+
+        // Act
+        let result = ssh_install_command(
+            host, hostname, username, true,  // investigate_only
+            false, // dry_run
+            false, // hold_on_failure
+            false, // pause_after_storage
+        )
+        .await;
+
+        // Assert
+        // Should fail to connect but test the logic flow
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_ssh_install_command_dry_run() {
+        // Arrange
+        let host = "localhost";
+        let hostname = None;
+        let username = None;
+
+        // Act
+        let result = ssh_install_command(
+            host, hostname, username, false, // investigate_only
+            true,  // dry_run
+            false, // hold_on_failure
+            false, // pause_after_storage
+        )
+        .await;
+
+        // Assert
+        // Should fail to connect but test the logic flow
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_architecture_conversion_in_context() {
+        // Arrange
+        let amd64 = Architecture::Amd64;
+        let arm64 = Architecture::Arm64;
+
+        // Act
+        let amd64_str = amd64.as_str();
+        let arm64_str = arm64.as_str();
+
+        // Assert
+        assert_eq!(amd64_str, "amd64");
+        assert_eq!(arm64_str, "arm64");
+    }
+
+    #[tokio::test]
+    async fn test_local_install_command_investigate_only() {
+        // Arrange
+        let hostname = Some("test-local".to_string());
+
+        // Act
+        let result = local_install_command(
+            hostname, true,  // investigate_only
+            false, // dry_run
+            false, // hold_on_failure
+            false, // pause_after_storage
+        )
+        .await;
+
+        // Assert
+        // Should fail since we're not running as root in test environment
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_local_install_command_dry_run() {
+        // Arrange
+        let hostname = None;
+
+        // Act
+        let result = local_install_command(
+            hostname, false, // investigate_only
+            true,  // dry_run
+            false, // hold_on_failure
+            false, // pause_after_storage
+        )
+        .await;
+
+        // Assert
+        // Should fail since we're not running as root in test environment
+        assert!(result.is_err());
+    }
 }

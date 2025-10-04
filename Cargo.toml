@@ -50,6 +50,9 @@ indicatif = "0.17"
 # UUID Generation
 uuid = { version = "1.6", features = ["v4"] }
 
+# Async traits
+async-trait = "0.1"
+
 # Futures and async utilities
 futures = "0.3"
 

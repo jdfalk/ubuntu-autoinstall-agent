@@ -5,9 +5,13 @@
 //! Network operations module
 
 pub mod download;
+pub mod executor;
+pub mod local;
 pub mod ssh;
 pub mod ssh_installer;
 
 pub use download::NetworkDownloader;
+pub use executor::CommandExecutor;
+pub use local::LocalClient;
 pub use ssh::SshClient;
 pub use ssh_installer::{InstallationConfig, SshInstaller, SystemInfo};

@@ -1,5 +1,5 @@
 // file: src/image/builder/cloudinit.rs
-// version: 1.0.0
+// version: 1.1.0
 // guid: c1c2c3c4-d5d6-7890-1234-567890cdefgh
 
 //! Cloud-init configuration generation
@@ -104,5 +104,199 @@ autoinstall:
         );
 
         Ok(config)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{Architecture, VmConfig};
+    use tempfile::TempDir;
+
+    fn create_test_image_spec() -> ImageSpec {
+        ImageSpec {
+            ubuntu_version: "24.04".to_string(),
+            architecture: Architecture::Amd64,
+            base_packages: vec![
+                "openssh-server".to_string(),
+                "curl".to_string(),
+                "htop".to_string(),
+            ],
+            vm_config: VmConfig {
+                memory_mb: 2048,
+                disk_size_gb: 20,
+                cpu_cores: 2,
+            },
+            custom_scripts: vec![],
+        }
+    }
+
+    #[test]
+    fn test_cloud_init_manager_creation() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let work_dir = temp_dir.path().to_path_buf();
+
+        // Act
+        let manager = CloudInitManager::new(work_dir.clone());
+
+        // Assert
+        assert_eq!(manager.work_dir, work_dir);
+    }
+
+    #[tokio::test]
+    async fn test_create_cloud_init_config() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let manager = CloudInitManager::new(temp_dir.path().to_path_buf());
+        let spec = create_test_image_spec();
+
+        // Act
+        let result = manager.create_cloud_init_config(&spec).await;
+
+        // Assert
+        assert!(result.is_ok());
+        let cloud_init_dir = result.unwrap();
+        assert!(cloud_init_dir.exists());
+        assert!(cloud_init_dir.join("user-data").exists());
+        assert!(cloud_init_dir.join("meta-data").exists());
+    }
+
+    #[tokio::test]
+    async fn test_user_data_content() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let manager = CloudInitManager::new(temp_dir.path().to_path_buf());
+        let spec = create_test_image_spec();
+
+        // Act
+        let cloud_init_dir = manager.create_cloud_init_config(&spec).await.unwrap();
+        let user_data_content = fs::read_to_string(cloud_init_dir.join("user-data"))
+            .await
+            .unwrap();
+
+        // Assert
+        assert!(user_data_content.contains("#cloud-config"));
+        assert!(user_data_content.contains("autoinstall:"));
+        assert!(user_data_content.contains("openssh-server"));
+        assert!(user_data_content.contains("curl"));
+        assert!(user_data_content.contains("htop"));
+        assert!(user_data_content.contains("version: 1"));
+        assert!(user_data_content.contains("locale: en_US.UTF-8"));
+    }
+
+    #[tokio::test]
+    async fn test_meta_data_content() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let manager = CloudInitManager::new(temp_dir.path().to_path_buf());
+        let spec = create_test_image_spec();
+
+        // Act
+        let cloud_init_dir = manager.create_cloud_init_config(&spec).await.unwrap();
+        let meta_data_content = fs::read_to_string(cloud_init_dir.join("meta-data"))
+            .await
+            .unwrap();
+
+        // Assert
+        assert!(meta_data_content.contains("instance-id: ubuntu-autoinstall-"));
+        assert!(meta_data_content.len() > 20); // Should have UUID
+    }
+
+    #[test]
+    fn test_generate_user_data() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let manager = CloudInitManager::new(temp_dir.path().to_path_buf());
+        let spec = create_test_image_spec();
+
+        // Act
+        let result = manager.generate_user_data(&spec);
+
+        // Assert
+        assert!(result.is_ok());
+        let user_data = result.unwrap();
+
+        // Check specific configuration elements
+        assert!(user_data.contains("openssh-server"));
+        assert!(user_data.contains("curl"));
+        assert!(user_data.contains("htop"));
+        assert!(user_data.contains("autoinstall:"));
+        assert!(user_data.contains("version: 1"));
+        assert!(user_data.contains("timezone: UTC"));
+        assert!(user_data.contains("shutdown: reboot"));
+    }
+
+    #[test]
+    fn test_generate_user_data_with_different_packages() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let manager = CloudInitManager::new(temp_dir.path().to_path_buf());
+        let mut spec = create_test_image_spec();
+        spec.base_packages = vec!["git".to_string(), "docker.io".to_string()];
+
+        // Act
+        let result = manager.generate_user_data(&spec);
+
+        // Assert
+        assert!(result.is_ok());
+        let user_data = result.unwrap();
+        assert!(user_data.contains("git"));
+        assert!(user_data.contains("docker.io"));
+        assert!(!user_data.contains("openssh-server"));
+    }
+
+    #[test]
+    fn test_generate_user_data_contains_security_features() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let manager = CloudInitManager::new(temp_dir.path().to_path_buf());
+        let spec = create_test_image_spec();
+
+        // Act
+        let user_data = manager.generate_user_data(&spec).unwrap();
+
+        // Assert
+        // Verify security-related configurations
+        assert!(user_data.contains("install-server: true"));
+        assert!(user_data.contains("allow-pw: false"));
+        assert!(user_data.contains("NOPASSWD:ALL"));
+        assert!(user_data.contains("updates: security"));
+    }
+
+    #[test]
+    fn test_generate_user_data_contains_grub_config() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let manager = CloudInitManager::new(temp_dir.path().to_path_buf());
+        let spec = create_test_image_spec();
+
+        // Act
+        let user_data = manager.generate_user_data(&spec).unwrap();
+
+        // Assert
+        // Verify GRUB configuration for serial console
+        assert!(user_data.contains("GRUB_TERMINAL="));
+        assert!(user_data.contains("GRUB_SERIAL_COMMAND="));
+        assert!(user_data.contains("console=ttyS0,115200n8"));
+        assert!(user_data.contains("update-grub"));
+    }
+
+    #[test]
+    fn test_generate_user_data_contains_error_handling() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let manager = CloudInitManager::new(temp_dir.path().to_path_buf());
+        let spec = create_test_image_spec();
+
+        // Act
+        let user_data = manager.generate_user_data(&spec).unwrap();
+
+        // Assert
+        // Verify error handling and logging
+        assert!(user_data.contains("late-commands:"));
+        assert!(user_data.contains("error-commands:"));
+        assert!(user_data.contains("autoinstall.log"));
+        assert!(user_data.contains("autoinstall-error.log"));
     }
 }
