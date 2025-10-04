@@ -197,6 +197,7 @@ mod tests {
     use super::*;
     use crate::config::{Architecture, ImageSpec};
     use tempfile::TempDir;
+    use tokio::fs as async_fs;
 
     #[test]
     fn test_iso_manager_new() {
@@ -369,33 +370,29 @@ mod tests {
             custom_scripts: vec![],
         };
 
+        // Seed cache with expected kernel/initrd so download path is skipped in tests
+        let extract_dir = cache_dir
+            .join("extracted")
+            .join("ubuntu-24.04-amd64")
+            .join("casper");
+        async_fs::create_dir_all(&extract_dir).await.unwrap();
+        async_fs::write(extract_dir.join("vmlinuz"), b"mock-kernel")
+            .await
+            .unwrap();
+        async_fs::write(extract_dir.join("initrd"), b"mock-initrd")
+            .await
+            .unwrap();
+
         // Act
         let result = iso_manager.get_ubuntu_iso(&spec).await;
 
         // Assert
-        // This will likely fail due to missing network/tools, but should create directories
-        let iso_dir = cache_dir.join("isos").join("ubuntu-24.04-amd64");
-        let extract_dir = cache_dir.join("extracted").join("ubuntu-24.04-amd64");
+        let expected_extract_dir = cache_dir.join("extracted").join("ubuntu-24.04-amd64");
+        assert!(expected_extract_dir.exists());
+        assert!(cache_dir.join("isos").join("ubuntu-24.04-amd64").exists());
 
-        // Directories should be created even if download fails
-        assert!(iso_dir.exists(), "ISO directory should be created");
-        assert!(extract_dir.exists(), "Extract directory should be created");
-
-        // The actual download will likely fail in test environment
-        // which is expected and acceptable for unit tests
-        match result {
-            Ok(_) => {
-                // If successful (unlikely in test), verify structure
-                let _kernel_path = extract_dir.join("casper").join("vmlinuz");
-                // Kernel may or may not exist depending on environment
-            }
-            Err(_) => {
-                // Expected in test environment without network/tools
-                // Just verify the directory structure was created
-                assert!(iso_dir.exists());
-                assert!(extract_dir.exists());
-            }
-        }
+        let output_path = result.expect("iso manager should return cached path");
+        assert_eq!(output_path, expected_extract_dir);
     }
 
     #[test]
@@ -443,11 +440,15 @@ mod tests {
         let iso_manager = IsoManager::new(temp_dir.path().to_path_buf());
         let test_file = temp_dir.path().join("test_download.txt");
 
-        // Use a non-existent URL to test error handling
-        let invalid_url = "https://invalid-url-that-does-not-exist.example.com/file.txt";
+        // Use mocked downloader to simulate a failure without making real network calls
+        crate::network::download::set_mock_download_with_progress(Err(
+            crate::error::AutoInstallError::NetworkError("Simulated download failure".to_string()),
+        ));
 
         // Act
-        let result = iso_manager.download_file(invalid_url, &test_file).await;
+        let result = iso_manager
+            .download_file("http://unused.test/does-not-exist", &test_file)
+            .await;
 
         // Assert
         // Should fail gracefully with network error
