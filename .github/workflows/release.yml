@@ -1,5 +1,5 @@
 # file: .github/workflows/release.yml
-# version: 5.1.0
+# version: 5.2.0
 # guid: f1a2b3c4-d5e6-7f8a-9b0c-1d2e3f4a5b6c
 
 name: Release Coordinator
@@ -12,10 +12,12 @@ on:
   workflow_call:
     inputs:
       release_type:
+        description: "Release type (auto, major, minor, patch)"
         required: false
         type: string
         default: auto
       build_target:
+        description: "Build target (all, go, python, frontend, docker, protobuf, rust)"
         required: false
         type: string
         default: all
@@ -24,6 +26,41 @@ on:
         type: boolean
         default: false
       draft:
+        required: false
+        type: boolean
+        default: false
+      skip_language_detection:
+        description: "Skip automatic language detection"
+        required: false
+        type: boolean
+        default: false
+      go_enabled:
+        description: "Force enable Go builds"
+        required: false
+        type: boolean
+        default: false
+      python_enabled:
+        description: "Force enable Python builds"
+        required: false
+        type: boolean
+        default: false
+      rust_enabled:
+        description: "Force enable Rust builds"
+        required: false
+        type: boolean
+        default: false
+      frontend_enabled:
+        description: "Force enable Frontend builds"
+        required: false
+        type: boolean
+        default: false
+      docker_enabled:
+        description: "Force enable Docker builds"
+        required: false
+        type: boolean
+        default: false
+      protobuf_enabled:
+        description: "Force enable Protobuf builds"
         required: false
         type: boolean
         default: false
@@ -72,6 +109,41 @@ on:
         required: false
         default: false
         type: boolean
+      skip_language_detection:
+        description: "Skip automatic language detection"
+        required: false
+        default: false
+        type: boolean
+      go_enabled:
+        description: "Force enable Go builds"
+        required: false
+        default: false
+        type: boolean
+      python_enabled:
+        description: "Force enable Python builds"
+        required: false
+        default: false
+        type: boolean
+      rust_enabled:
+        description: "Force enable Rust builds"
+        required: false
+        default: false
+        type: boolean
+      frontend_enabled:
+        description: "Force enable Frontend builds"
+        required: false
+        default: false
+        type: boolean
+      docker_enabled:
+        description: "Force enable Docker builds"
+        required: false
+        default: false
+        type: boolean
+      protobuf_enabled:
+        description: "Force enable Protobuf builds"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -89,4 +161,11 @@ jobs:
       build-target: ${{ inputs.build_target || 'all' }}
       prerelease: ${{ inputs.prerelease || false }}
       draft: ${{ inputs.draft || false }}
+      skip-language-detection: ${{ inputs.skip_language_detection || false }}
+      go-enabled: ${{ inputs.go_enabled || false }}
+      python-enabled: ${{ inputs.python_enabled || false }}
+      rust-enabled: ${{ inputs.rust_enabled || false }}
+      frontend-enabled: ${{ inputs.frontend_enabled || false }}
+      docker-enabled: ${{ inputs.docker_enabled || false }}
+      protobuf-enabled: ${{ inputs.protobuf_enabled || false }}
     secrets: inherit
