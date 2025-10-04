@@ -133,6 +133,12 @@ pub enum Commands {
 
         #[arg(long, help = "Pause after storage setup for manual verification")]
         pause_after_storage: bool,
+
+        #[arg(
+            long,
+            help = "Force installation even when not in live environment (use with caution)"
+        )]
+        force: bool,
     },
 }
 
@@ -501,10 +507,14 @@ mod tests {
                 dry_run,
                 hold_on_failure,
                 pause_after_storage,
+                force,
             } => {
                 assert!(hostname.is_none());
                 assert!(!investigate_only);
                 assert!(!dry_run);
+                assert!(!hold_on_failure);
+                assert!(!pause_after_storage);
+                assert!(!force);
                 assert!(!hold_on_failure);
                 assert!(!pause_after_storage);
             }
@@ -537,9 +547,14 @@ mod tests {
                 dry_run,
                 hold_on_failure,
                 pause_after_storage,
+                force,
             } => {
                 assert_eq!(hostname.as_deref(), Some("local-server"));
                 assert!(investigate_only);
+                assert!(!dry_run);
+                assert!(!hold_on_failure);
+                assert!(!pause_after_storage);
+                assert!(!force);
                 assert!(dry_run);
                 assert!(hold_on_failure);
                 assert!(pause_after_storage);

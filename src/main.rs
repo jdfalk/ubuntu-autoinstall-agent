@@ -85,6 +85,7 @@ async fn main() -> Result<()> {
                 dry_run,
                 hold_on_failure,
                 pause_after_storage,
+                force,
             } => {
                 local_install_command(
                     hostname,
@@ -92,6 +93,7 @@ async fn main() -> Result<()> {
                     dry_run,
                     hold_on_failure,
                     pause_after_storage,
+                    force,
                 )
                 .await
             }

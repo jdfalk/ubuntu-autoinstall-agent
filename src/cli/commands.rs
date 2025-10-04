@@ -13,7 +13,7 @@ use crate::{
     Result,
 };
 use std::io::Write;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 /// Create a golden Ubuntu image
 pub async fn create_image_command(
@@ -368,6 +368,7 @@ pub async fn local_install_command(
     dry_run: bool,
     hold_on_failure: bool,
     pause_after_storage: bool,
+    force: bool,
 ) -> Result<()> {
     let hostname = hostname.unwrap_or_else(|| "ubuntu-local".to_string());
 
@@ -380,11 +381,19 @@ pub async fn local_install_command(
         ));
     }
 
-    // Check if we're in a live environment
-    if !is_live_environment() {
+    // Check if we're in a live environment (unless forced)
+    if !force && !is_live_environment() {
         return Err(crate::error::AutoInstallError::ValidationError(
-            "Local installation should only be run from a live USB/CD environment".to_string(),
+            "Local installation should only be run from a live USB/CD environment. Use --force to override this check (dangerous!)".to_string(),
         ));
+    }
+
+    if force && !is_live_environment() {
+        warn!("WARNING: --force used to bypass live environment check!");
+        warn!(
+            "This will install Ubuntu on the CURRENT SYSTEM, potentially destroying existing data!"
+        );
+        warn!("Make sure you understand the risks before proceeding.");
     }
 
     let mut installer = SshInstaller::new();
@@ -837,6 +846,7 @@ users:
             false, // dry_run
             false, // hold_on_failure
             false, // pause_after_storage
+            false, // force
         )
         .await;
 
@@ -856,6 +866,7 @@ users:
             true,  // dry_run
             false, // hold_on_failure
             false, // pause_after_storage
+            false, // force
         )
         .await;
 
