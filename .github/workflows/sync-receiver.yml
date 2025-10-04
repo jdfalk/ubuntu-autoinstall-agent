@@ -157,7 +157,7 @@ jobs:
                 ;;&
               "all"|"linters")
                 echo "🔄 Processing linters section..."
-                if [ -d "ghcommon-source/.github/linters" ]; then
+                if [ -d "ghcommon-source" ] && ls ghcommon-source/*.{env,yml,yaml,toml,json} 2>/dev/null; then
                   for file in ghcommon-source/.github/linters/*; do
                     if [ -f "$file" ]; then
                       filename=$(basename "$file")
@@ -168,8 +168,8 @@ jobs:
                           echo "✅ Copied $filename to root directory"
                           ;;
                         *)
-                          # Keep other files in .github/linters for compatibility
-                          mkdir -p ".github/linters"
+                          # Keep root linter files for compatibility
+
                           cp "$file" ".github/linters/"
                           echo "✅ Copied $filename to .github/linters/"
                           ;;
