@@ -1,5 +1,5 @@
 <!-- file: .github/copilot-instructions.md -->
-<!-- version: 2.3.0 -->
+<!-- version: 2.4.0 -->
 <!-- guid: 4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f9a -->
 
 # Copilot/AI Agent Coding Instructions System
@@ -7,7 +7,11 @@
 This repository uses a centralized, modular system for Copilot/AI agent coding, documentation, and
 workflow instructions, following the latest VS Code Copilot customization best practices.
 
-## Commit Message Standards
+---
+
+# 🚨 CRITICAL: COMMIT MESSAGE FORMAT 🚨
+
+**EVERY SINGLE COMMIT MESSAGE MUST USE CONVENTIONAL COMMITS FORMAT. NO EXCEPTIONS.**
 
 **ALL commit messages MUST follow Conventional Commits format:**
 
@@ -27,7 +31,7 @@ workflow instructions, following the latest VS Code Copilot customization best p
 - `body`: detailed explanation (optional but recommended for non-trivial changes)
 - `footer`: breaking changes, issue references (optional)
 
-**Examples:**
+**✅ CORRECT Examples:**
 
 - `feat(api): add user authentication endpoint`
 - `fix(core): resolve memory leak in image processor`
@@ -38,7 +42,28 @@ workflow instructions, following the latest VS Code Copilot customization best p
 - `style: reformat code with Prettier`
 - `test(auth): add unit tests for login functionality`
 
+**❌ WRONG - These will be REJECTED:**
+
+- `Add unit tests for DiskManager, IsoManager, PostProcessor, and QemuUtils` ❌ NO TYPE!
+- `Update tests` ❌ TOO VAGUE, NO TYPE!
+- `Fixed bugs in the code` ❌ NO TYPE, TOO VAGUE!
+- `Improvements to the system` ❌ NO TYPE, NO DETAIL!
+
+**The CORRECT version of that first example would be:**
+
+```
+test(utils): add unit tests for disk, iso, and qemu utilities
+
+- Add DiskManager tests for creation and path retrieval
+- Add IsoManager tests for URL generation validation
+- Add PostProcessor tests for checksum and finalization
+- Enhance QemuUtils tests for image info and error handling
+- Handle expected errors in CI environments without tools
+```
+
 **See `.github/instructions/commit-messages.instructions.md` for complete guidelines.**
+
+---
 
 ## Documentation Updates
 
