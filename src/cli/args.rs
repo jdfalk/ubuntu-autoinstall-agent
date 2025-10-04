@@ -551,13 +551,10 @@ mod tests {
             } => {
                 assert_eq!(hostname.as_deref(), Some("local-server"));
                 assert!(investigate_only);
-                assert!(!dry_run);
-                assert!(!hold_on_failure);
-                assert!(!pause_after_storage);
-                assert!(!force);
                 assert!(dry_run);
                 assert!(hold_on_failure);
                 assert!(pause_after_storage);
+                assert!(!force);
             }
             _ => panic!("Expected LocalInstall command"),
         }
