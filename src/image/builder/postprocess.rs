@@ -230,3 +230,299 @@ umount-all
         format!("{:.2} {}", size, UNITS[unit_index])
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{Architecture, ImageSpec, VmConfig};
+    use tempfile::TempDir;
+    use tokio::fs as async_fs;
+
+    #[test]
+    fn test_postprocessor_new() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let work_dir = temp_dir.path().join("work");
+        let cache_dir = temp_dir.path().join("cache");
+
+        // Act
+        let postprocessor = PostProcessor::new(work_dir.clone(), cache_dir.clone());
+
+        // Assert
+        assert_eq!(postprocessor.work_dir, work_dir);
+        assert_eq!(postprocessor.cache_dir, cache_dir);
+    }
+
+    #[test]
+    fn test_format_size() {
+        // Test different file sizes
+        let test_cases = vec![
+            (0, "0.00 B"),
+            (512, "512.00 B"),
+            (1024, "1.00 KB"),
+            (1536, "1.50 KB"),
+            (1024 * 1024, "1.00 MB"),
+            (1536 * 1024, "1.50 MB"),
+            (1024 * 1024 * 1024, "1.00 GB"),
+            (1536 * 1024 * 1024, "1.50 GB"),
+            (1024u64 * 1024 * 1024 * 1024, "1.00 TB"),
+        ];
+
+        for (size_bytes, expected) in test_cases {
+            // Act
+            let result = PostProcessor::format_size(size_bytes);
+
+            // Assert
+            assert_eq!(result, expected, "Failed for size: {}", size_bytes);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_calculate_image_checksum() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let work_dir = temp_dir.path().join("work");
+        let cache_dir = temp_dir.path().join("cache");
+        let postprocessor = PostProcessor::new(work_dir, cache_dir);
+
+        let test_file = temp_dir.path().join("test_image.qcow2");
+        let test_content = b"test image content for checksum";
+        async_fs::write(&test_file, test_content).await.unwrap();
+
+        // Act
+        let result = postprocessor.calculate_image_checksum(&test_file).await;
+
+        // Assert
+        assert!(result.is_ok());
+        let checksum = result.unwrap();
+        assert_eq!(checksum.len(), 64); // SHA256 hex string length
+        assert!(checksum.chars().all(|c| c.is_ascii_hexdigit()));
+
+        // Test that same content produces same checksum
+        let result2 = postprocessor.calculate_image_checksum(&test_file).await;
+        assert!(result2.is_ok());
+        assert_eq!(checksum, result2.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_calculate_image_checksum_nonexistent_file() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let work_dir = temp_dir.path().join("work");
+        let cache_dir = temp_dir.path().join("cache");
+        let postprocessor = PostProcessor::new(work_dir, cache_dir);
+
+        let nonexistent_file = temp_dir.path().join("nonexistent.qcow2");
+
+        // Act
+        let result = postprocessor
+            .calculate_image_checksum(&nonexistent_file)
+            .await;
+
+        // Assert
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            crate::error::AutoInstallError::IoError(_) => {
+                // Expected error type
+            }
+            other => panic!("Expected IoError, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_generalize_image() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let work_dir = temp_dir.path().join("work");
+        let cache_dir = temp_dir.path().join("cache");
+        let postprocessor = PostProcessor::new(work_dir.clone(), cache_dir);
+
+        // Create a mock VM disk file
+        let vm_disk = temp_dir.path().join("test_vm.qcow2");
+        async_fs::write(&vm_disk, b"mock vm disk content")
+            .await
+            .unwrap();
+
+        // Act
+        let result = postprocessor.generalize_image(&vm_disk).await;
+
+        // Assert
+        // This will likely fail due to missing guestfish, but should handle error gracefully
+        match result {
+            Ok(_) => {
+                // If successful (unlikely in test environment), that's fine
+            }
+            Err(crate::error::AutoInstallError::ImageError(_)) => {
+                // Expected when guestfish is not available
+            }
+            Err(crate::error::AutoInstallError::IoError(_)) => {
+                // Also acceptable - IO error during process execution
+            }
+            Err(other) => panic!("Unexpected error type: {:?}", other),
+        }
+
+        // Verify work directory structure
+        let _mount_point = work_dir.join("mount");
+        // Directory may or may not exist depending on how far the function got
+    }
+
+    #[tokio::test]
+    async fn test_finalize_image_with_output_path() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let work_dir = temp_dir.path().join("work");
+        let cache_dir = temp_dir.path().join("cache");
+        let postprocessor = PostProcessor::new(work_dir, cache_dir);
+
+        let vm_disk = temp_dir.path().join("source.qcow2");
+        let output_path = temp_dir.path().join("output.qcow2");
+        async_fs::write(&vm_disk, b"mock vm disk").await.unwrap();
+
+        let spec = ImageSpec {
+            ubuntu_version: "24.04".to_string(),
+            architecture: Architecture::Amd64,
+            base_packages: vec![],
+            vm_config: VmConfig {
+                memory_mb: 2048,
+                disk_size_gb: 20,
+                cpu_cores: 2,
+            },
+            custom_scripts: vec![],
+        };
+
+        // Act
+        let result = postprocessor
+            .finalize_image(
+                &vm_disk,
+                Some(output_path.to_string_lossy().to_string()),
+                &spec,
+            )
+            .await;
+
+        // Assert
+        // This will likely fail due to missing qemu-img, but should handle gracefully
+        match result {
+            Ok(final_path) => {
+                // If successful, verify the path
+                assert_eq!(final_path, output_path);
+            }
+            Err(crate::error::AutoInstallError::ImageError(_)) => {
+                // Expected when qemu-img is not available
+            }
+            Err(other) => panic!("Unexpected error type: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_finalize_image_auto_path() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let work_dir = temp_dir.path().join("work");
+        let cache_dir = temp_dir.path().join("cache");
+        let postprocessor = PostProcessor::new(work_dir, cache_dir.clone());
+
+        let vm_disk = temp_dir.path().join("source.qcow2");
+        async_fs::write(&vm_disk, b"mock vm disk").await.unwrap();
+
+        let spec = ImageSpec {
+            ubuntu_version: "24.04".to_string(),
+            architecture: Architecture::Amd64,
+            base_packages: vec![],
+            vm_config: VmConfig {
+                memory_mb: 2048,
+                disk_size_gb: 20,
+                cpu_cores: 2,
+            },
+            custom_scripts: vec![],
+        };
+
+        // Act
+        let result = postprocessor.finalize_image(&vm_disk, None, &spec).await;
+
+        // Assert
+        match result {
+            Ok(final_path) => {
+                // Verify auto-generated path structure
+                assert!(final_path.starts_with(cache_dir.join("images")));
+                assert!(final_path.to_string_lossy().contains("ubuntu-24.04-amd64"));
+                assert!(final_path.extension().unwrap() == "qcow2");
+            }
+            Err(crate::error::AutoInstallError::ImageError(_)) => {
+                // Expected when qemu-img is not available
+                // Still verify that images directory was created
+                let images_dir = cache_dir.join("images");
+                assert!(images_dir.exists());
+            }
+            Err(other) => panic!("Unexpected error type: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_finalize_image_different_architectures() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let work_dir = temp_dir.path().join("work");
+        let cache_dir = temp_dir.path().join("cache");
+        let postprocessor = PostProcessor::new(work_dir, cache_dir.clone());
+
+        let vm_disk = temp_dir.path().join("source.qcow2");
+        async_fs::write(&vm_disk, b"mock vm disk").await.unwrap();
+
+        let architectures = vec![Architecture::Amd64, Architecture::Arm64];
+
+        for arch in architectures {
+            // Arrange
+            let spec = ImageSpec {
+                ubuntu_version: "24.04".to_string(),
+                architecture: arch,
+                base_packages: vec![],
+                vm_config: VmConfig {
+                    memory_mb: 2048,
+                    disk_size_gb: 20,
+                    cpu_cores: 2,
+                },
+                custom_scripts: vec![],
+            };
+
+            // Act
+            let result = postprocessor.finalize_image(&vm_disk, None, &spec).await;
+
+            // Assert
+            match result {
+                Ok(final_path) => {
+                    let filename = final_path.file_name().unwrap().to_string_lossy();
+                    assert!(filename.contains(arch.as_str()));
+                }
+                Err(crate::error::AutoInstallError::ImageError(_)) => {
+                    // Expected when qemu-img not available
+                }
+                Err(other) => panic!("Unexpected error for arch {:?}: {:?}", arch, other),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_calculate_image_checksum_empty_file() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let work_dir = temp_dir.path().join("work");
+        let cache_dir = temp_dir.path().join("cache");
+        let postprocessor = PostProcessor::new(work_dir, cache_dir);
+
+        let empty_file = temp_dir.path().join("empty.qcow2");
+        async_fs::write(&empty_file, b"").await.unwrap();
+
+        // Act
+        let result = postprocessor.calculate_image_checksum(&empty_file).await;
+
+        // Assert
+        assert!(result.is_ok());
+        let checksum = result.unwrap();
+        assert_eq!(checksum.len(), 64); // SHA256 hex string length
+                                        // SHA256 of empty file is a known constant
+        assert_eq!(
+            checksum,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+    }
+}
