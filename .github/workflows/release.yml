@@ -59,7 +59,7 @@ on:
       build_target:
         description: "Build target"
         required: false
-        default: "all"
+        default: "rust"
         type: choice
         options:
           - all
