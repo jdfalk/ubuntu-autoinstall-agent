@@ -587,12 +587,26 @@ mod tests {
     #[tokio::test]
     async fn test_create_image_command_minimal_spec() {
         // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let cache_dir = temp_dir.path().join("cache");
         let arch = Architecture::Amd64;
         let version = "24.04";
 
+        // Provide cached kernel so the builder skips network calls in tests
+        let cached_casper_dir = cache_dir
+            .join("extracted")
+            .join(format!("ubuntu-{}-{}", version, arch.as_str()))
+            .join("casper");
+        fs::create_dir_all(&cached_casper_dir).await.unwrap();
+        fs::write(cached_casper_dir.join("vmlinuz"), b"mock-kernel")
+            .await
+            .unwrap();
+
+        let cache_dir_str = cache_dir.to_string_lossy().to_string();
+
         // Act & Assert
         // Note: This will fail without actual infrastructure, but tests the function signature
-        let result = create_image_command(arch, version, None, None, None).await;
+        let result = create_image_command(arch, version, None, None, Some(cache_dir_str)).await;
 
         // The function should at least not panic and return a Result
         // In a real test environment, we'd mock the ImageBuilder
@@ -621,9 +635,26 @@ custom_scripts: []
         let version = "24.04";
         let spec_path_str = spec_path.to_str().unwrap();
 
+        let cache_dir = temp_dir.path().join("cache");
+        let cached_casper_dir = cache_dir
+            .join("extracted")
+            .join(format!("ubuntu-{}-amd64", version))
+            .join("casper");
+        fs::create_dir_all(&cached_casper_dir).await.unwrap();
+        fs::write(cached_casper_dir.join("vmlinuz"), b"mock-kernel")
+            .await
+            .unwrap();
+        let cache_dir_str = cache_dir.to_string_lossy().to_string();
+
         // Act & Assert
-        let result =
-            create_image_command(arch, version, None, Some(spec_path_str.to_string()), None).await;
+        let result = create_image_command(
+            arch,
+            version,
+            None,
+            Some(spec_path_str.to_string()),
+            Some(cache_dir_str),
+        )
+        .await;
 
         // Should fail due to missing infrastructure but not due to spec parsing
         assert!(result.is_err());
