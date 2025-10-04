@@ -191,3 +191,268 @@ echo "ISO boot files extracted successfully"
         downloader.download_with_progress(url, dest).await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{Architecture, ImageSpec};
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_iso_manager_new() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let cache_dir = temp_dir.path().to_path_buf();
+
+        // Act
+        let iso_manager = IsoManager::new(cache_dir.clone());
+
+        // Assert
+        assert_eq!(iso_manager.cache_dir, cache_dir);
+    }
+
+    #[test]
+    fn test_get_ubuntu_server_iso_url_amd64() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let iso_manager = IsoManager::new(temp_dir.path().to_path_buf());
+        let spec = ImageSpec {
+            ubuntu_version: "24.04".to_string(),
+            architecture: Architecture::Amd64,
+            base_packages: vec![],
+            vm_config: crate::config::VmConfig {
+                memory_mb: 2048,
+                disk_size_gb: 20,
+                cpu_cores: 2,
+            },
+            custom_scripts: vec![],
+        };
+
+        // Act
+        let result = iso_manager.get_ubuntu_server_iso_url(&spec);
+
+        // Assert
+        assert!(result.is_ok());
+        let url = result.unwrap();
+        assert_eq!(
+            url,
+            "https://releases.ubuntu.com/noble/ubuntu-24.04-live-server-amd64.iso"
+        );
+        assert!(url.contains("noble"));
+        assert!(url.contains("amd64"));
+        assert!(url.contains("24.04"));
+    }
+
+    #[test]
+    fn test_get_ubuntu_server_iso_url_arm64() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let iso_manager = IsoManager::new(temp_dir.path().to_path_buf());
+        let spec = ImageSpec {
+            ubuntu_version: "24.10".to_string(),
+            architecture: Architecture::Arm64,
+            base_packages: vec![],
+            vm_config: crate::config::VmConfig {
+                memory_mb: 2048,
+                disk_size_gb: 20,
+                cpu_cores: 2,
+            },
+            custom_scripts: vec![],
+        };
+
+        // Act
+        let result = iso_manager.get_ubuntu_server_iso_url(&spec);
+
+        // Assert
+        assert!(result.is_ok());
+        let url = result.unwrap();
+        assert_eq!(
+            url,
+            "https://releases.ubuntu.com/oracular/ubuntu-24.10-live-server-arm64.iso"
+        );
+        assert!(url.contains("oracular"));
+        assert!(url.contains("arm64"));
+        assert!(url.contains("24.10"));
+    }
+
+    #[test]
+    fn test_get_ubuntu_server_iso_url_all_versions() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let iso_manager = IsoManager::new(temp_dir.path().to_path_buf());
+
+        let test_cases = vec![
+            ("25.04", "plucky"),
+            ("24.10", "oracular"),
+            ("24.04", "noble"),
+            ("23.10", "mantic"),
+            ("23.04", "lunar"),
+        ];
+
+        for (version, expected_codename) in test_cases {
+            // Arrange
+            let spec = ImageSpec {
+                ubuntu_version: version.to_string(),
+                architecture: Architecture::Amd64,
+                base_packages: vec![],
+                vm_config: crate::config::VmConfig {
+                    memory_mb: 2048,
+                    disk_size_gb: 20,
+                    cpu_cores: 2,
+                },
+                custom_scripts: vec![],
+            };
+
+            // Act
+            let result = iso_manager.get_ubuntu_server_iso_url(&spec);
+
+            // Assert
+            assert!(result.is_ok(), "Failed for version {}", version);
+            let url = result.unwrap();
+            assert!(
+                url.contains(expected_codename),
+                "URL {} should contain codename {} for version {}",
+                url,
+                expected_codename,
+                version
+            );
+            assert!(url.contains(version));
+            assert!(url.starts_with("https://releases.ubuntu.com/"));
+        }
+    }
+
+    #[test]
+    fn test_get_ubuntu_server_iso_url_unsupported_version() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let iso_manager = IsoManager::new(temp_dir.path().to_path_buf());
+        let spec = ImageSpec {
+            ubuntu_version: "99.99".to_string(),
+            architecture: Architecture::Amd64,
+            base_packages: vec![],
+            vm_config: crate::config::VmConfig {
+                memory_mb: 2048,
+                disk_size_gb: 20,
+                cpu_cores: 2,
+            },
+            custom_scripts: vec![],
+        };
+
+        // Act
+        let result = iso_manager.get_ubuntu_server_iso_url(&spec);
+
+        // Assert
+        assert!(result.is_err());
+        match result {
+            Err(crate::error::AutoInstallError::ConfigError(msg)) => {
+                assert!(msg.contains("Unsupported Ubuntu version: 99.99"));
+            }
+            _ => panic!("Expected ConfigError for unsupported version"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_ubuntu_iso_cache_directories() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let cache_dir = temp_dir.path().to_path_buf();
+        let iso_manager = IsoManager::new(cache_dir.clone());
+        let spec = ImageSpec {
+            ubuntu_version: "24.04".to_string(),
+            architecture: Architecture::Amd64,
+            base_packages: vec![],
+            vm_config: crate::config::VmConfig {
+                memory_mb: 2048,
+                disk_size_gb: 20,
+                cpu_cores: 2,
+            },
+            custom_scripts: vec![],
+        };
+
+        // Act
+        let result = iso_manager.get_ubuntu_iso(&spec).await;
+
+        // Assert
+        // This will likely fail due to missing network/tools, but should create directories
+        let iso_dir = cache_dir.join("isos").join("ubuntu-24.04-amd64");
+        let extract_dir = cache_dir.join("extracted").join("ubuntu-24.04-amd64");
+
+        // Directories should be created even if download fails
+        assert!(iso_dir.exists(), "ISO directory should be created");
+        assert!(extract_dir.exists(), "Extract directory should be created");
+
+        // The actual download will likely fail in test environment
+        // which is expected and acceptable for unit tests
+        match result {
+            Ok(_) => {
+                // If successful (unlikely in test), verify structure
+                let _kernel_path = extract_dir.join("casper").join("vmlinuz");
+                // Kernel may or may not exist depending on environment
+            }
+            Err(_) => {
+                // Expected in test environment without network/tools
+                // Just verify the directory structure was created
+                assert!(iso_dir.exists());
+                assert!(extract_dir.exists());
+            }
+        }
+    }
+
+    #[test]
+    fn test_iso_manager_path_construction() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let cache_dir = temp_dir.path().to_path_buf();
+        let iso_manager = IsoManager::new(cache_dir.clone());
+
+        // Test different architecture path construction
+        let test_cases = vec![
+            (Architecture::Amd64, "amd64"),
+            (Architecture::Arm64, "arm64"),
+        ];
+
+        for (arch, arch_str) in test_cases {
+            // Arrange
+            let spec = ImageSpec {
+                ubuntu_version: "24.04".to_string(),
+                architecture: arch,
+                base_packages: vec![],
+                vm_config: crate::config::VmConfig {
+                    memory_mb: 2048,
+                    disk_size_gb: 20,
+                    cpu_cores: 2,
+                },
+                custom_scripts: vec![],
+            };
+
+            // Act
+            let url_result = iso_manager.get_ubuntu_server_iso_url(&spec);
+
+            // Assert
+            assert!(url_result.is_ok());
+            let url = url_result.unwrap();
+            assert!(url.contains(arch_str));
+            assert!(url.contains("24.04"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_download_file_method_structure() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let iso_manager = IsoManager::new(temp_dir.path().to_path_buf());
+        let test_file = temp_dir.path().join("test_download.txt");
+
+        // Use a non-existent URL to test error handling
+        let invalid_url = "https://invalid-url-that-does-not-exist.example.com/file.txt";
+
+        // Act
+        let result = iso_manager.download_file(invalid_url, &test_file).await;
+
+        // Assert
+        // Should fail gracefully with network error
+        assert!(result.is_err());
+        // File should not be created for failed download
+        assert!(!test_file.exists());
+    }
+}
