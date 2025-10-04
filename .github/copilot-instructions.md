@@ -1,5 +1,5 @@
 <!-- file: .github/copilot-instructions.md -->
-<!-- version: 2.4.0 -->
+<!-- version: 2.5.0 -->
 <!-- guid: 4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f9a -->
 
 # Copilot/AI Agent Coding Instructions System
@@ -49,17 +49,48 @@ workflow instructions, following the latest VS Code Copilot customization best p
 - `Fixed bugs in the code` ❌ NO TYPE, TOO VAGUE!
 - `Improvements to the system` ❌ NO TYPE, NO DETAIL!
 
-**The CORRECT version of that first example would be:**
+## Multiple Changes in One Commit
+
+**When a commit contains MULTIPLE DIFFERENT types of changes, use MULTIPLE conventional commit lines
+in the subject.**
+
+This allows automated tools to parse and count each type of change separately for analytics,
+changelogs, and release notes.
+
+**Format for multiple changes:**
 
 ```
-test(utils): add unit tests for disk, iso, and qemu utilities
+<type1>(<scope1>): <change1>; <type2>(<scope2>): <change2>; <type3>(<scope3>): <change3>
 
-- Add DiskManager tests for creation and path retrieval
-- Add IsoManager tests for URL generation validation
-- Add PostProcessor tests for checksum and finalization
-- Enhance QemuUtils tests for image info and error handling
+<detailed body with bullet points for each change>
+```
+
+**✅ CORRECT Example - Multiple Changes:**
+
+```
+test(disk): add DiskManager unit tests; test(iso): add IsoManager tests; test(qemu): add QemuUtils tests
+
+Changes Made:
+
+test(disk): add unit tests for DiskManager
+- Add tests for disk creation and path retrieval
+- Verify error handling for invalid paths
+
+test(iso): add unit tests for IsoManager
+- Add tests for URL generation validation
+- Test different Ubuntu versions (22.04, 24.04)
+
+test(qemu): add unit tests for QemuUtils
+- Enhance tests for image info retrieval
+- Add conversion error handling tests
 - Handle expected errors in CI environments without tools
 ```
+
+**Alternative - Use separate commits when changes are unrelated:**
+
+- Commit 1: `test(disk): add DiskManager unit tests`
+- Commit 2: `test(iso): add IsoManager unit tests`
+- Commit 3: `test(qemu): add QemuUtils unit tests`
 
 **See `.github/instructions/commit-messages.instructions.md` for complete guidelines.**
 
