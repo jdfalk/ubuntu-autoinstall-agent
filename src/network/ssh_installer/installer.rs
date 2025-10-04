@@ -10,14 +10,23 @@ use super::investigation::SystemInvestigator;
 use super::packages::PackageManager;
 use super::system_setup::SystemConfigurator;
 use super::zfs_ops::ZfsManager;
-use crate::network::SshClient;
+use crate::network::{LocalClient, SshClient};
 use crate::Result;
 use std::collections::HashMap;
 use tracing::{error, info};
 
+/// Execution mode for the installer
+#[derive(Debug, Clone, PartialEq)]
+enum ExecutionMode {
+    Ssh,
+    Local,
+}
+
 /// SSH-based installer for Ubuntu with ZFS and LUKS
 pub struct SshInstaller {
     ssh: SshClient,
+    local: LocalClient,
+    mode: ExecutionMode,
     connected: bool,
     variables: HashMap<String, String>,
 }
@@ -27,6 +36,8 @@ impl SshInstaller {
     pub fn new() -> Self {
         Self {
             ssh: SshClient::new(),
+            local: LocalClient::new(),
+            mode: ExecutionMode::Ssh,
             connected: false,
             variables: HashMap::new(),
         }
@@ -215,9 +226,8 @@ impl SshInstaller {
 
     /// Connect for local installation (no SSH needed)
     pub async fn connect_local(&mut self) -> Result<()> {
-        // For local installation, we replace the SSH client with a LocalClient
-        // This is a simplified approach - in a more complex implementation,
-        // we might use trait objects or generics to support both client types
+        // Switch to local mode
+        self.mode = ExecutionMode::Local;
         self.connected = true;
         info!("Local installation mode activated");
         Ok(())
@@ -231,8 +241,16 @@ impl SshInstaller {
             ));
         }
 
-        let mut investigator = SystemInvestigator::new(&mut self.ssh);
-        investigator.investigate_system().await
+        match self.mode {
+            ExecutionMode::Ssh => {
+                let mut investigator = SystemInvestigator::new(&mut self.ssh);
+                investigator.investigate_system().await
+            }
+            ExecutionMode::Local => {
+                let mut investigator = SystemInvestigator::new(&mut self.local);
+                investigator.investigate_system().await
+            }
+        }
     }
 
     /// Perform full ZFS + LUKS installation with comprehensive error handling
