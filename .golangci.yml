@@ -1,4 +1,4 @@
-# file: .github/linters/.golangci.yml
+# file: .golangci.yml
 # version: 1.0.0
 # guid: 4d5e6f7a-8b9c-0123-def4-56789abcdef0
 
@@ -65,23 +65,7 @@ linters-settings:
         severity: warning
         disabled: false
         arguments:
-          - [
-              "ID",
-              "API",
-              "URL",
-              "HTTP",
-              "JSON",
-              "XML",
-              "HTML",
-              "CSS",
-              "JS",
-              "SQL",
-              "DB",
-              "OS",
-              "UI",
-              "UUID",
-              "URI",
-            ]
+          - ["ID", "API", "URL", "HTTP", "JSON", "XML", "HTML", "CSS", "JS", "SQL", "DB", "OS", "UI", "UUID", "URI"]
       - name: exported
         arguments: [checkPrivateReceivers, disableStutteringCheck]
 
