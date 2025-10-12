@@ -12,9 +12,40 @@ import sys
 import textwrap
 import time
 from pathlib import Path
-from typing import Iterable
+import json
+from typing import Any, Iterable
 
 import requests
+
+_CONFIG_CACHE: dict[str, Any] | None = None
+
+
+def get_repository_config() -> dict[str, Any]:
+    global _CONFIG_CACHE
+    if _CONFIG_CACHE is not None:
+        return _CONFIG_CACHE
+
+    raw = os.environ.get("REPOSITORY_CONFIG")
+    if not raw:
+        _CONFIG_CACHE = {}
+        return _CONFIG_CACHE
+
+    try:
+        _CONFIG_CACHE = json.loads(raw)
+    except json.JSONDecodeError:
+        print("::warning::Unable to parse REPOSITORY_CONFIG JSON; falling back to defaults")
+        _CONFIG_CACHE = {}
+    return _CONFIG_CACHE
+
+
+def _config_path(default: Any, *path: str) -> Any:
+    config = get_repository_config()
+    current: Any = config
+    for key in path:
+        if not isinstance(current, dict) or key not in current:
+            return default
+        current = current[key]
+    return current
 
 
 def append_to_file(path_env: str, content: str) -> None:
@@ -479,6 +510,9 @@ def build_parser() -> argparse.ArgumentParser:
         "wait-for-pr-automation": wait_for_pr_automation,
         "load-super-linter-config": load_super_linter_config,
         "write-validation-summary": write_validation_summary,
+        "generate-matrices": generate_matrices,
+        "go-setup": go_setup,
+        "go-test": go_test,
         "check-go-coverage": check_go_coverage,
         "frontend-install": frontend_install,
         "frontend-run": frontend_run,
@@ -515,3 +549,106 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+def _ensure_go_context() -> bool:
+    if not Path("go.mod").is_file():
+        print("ℹ️ No go.mod found; skipping Go step")
+        return False
+    return True
+
+
+def go_setup(_: argparse.Namespace) -> None:
+    if not _ensure_go_context():
+        return
+    subprocess.run(["go", "mod", "download"], check=True)
+    subprocess.run(["go", "build", "-v", "./..."], check=True)
+
+
+def go_test(_: argparse.Namespace) -> None:
+    if not _ensure_go_context():
+        return
+
+    coverage_file = os.environ.get("COVERAGE_FILE", "coverage.out")
+    coverage_html = os.environ.get("COVERAGE_HTML", "coverage.html")
+    threshold_env = os.environ.get("COVERAGE_THRESHOLD")
+    if threshold_env:
+        threshold = float(threshold_env)
+    else:
+        threshold = float(
+            _config_path(0, "testing", "coverage", "threshold") or 0
+        )
+
+    command = ["go", "test", "-v", "-race", f"-coverprofile={coverage_file}", "./..."]
+    subprocess.run(command, check=True)
+
+    go_binary = shutil.which("go") or "go"
+    subprocess.run(
+        [go_binary, "tool", "cover", f"-html={coverage_file}", "-o", coverage_html],
+        check=True,
+    )
+    result = subprocess.run(
+        [go_binary, "tool", "cover", "-func", coverage_file],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    total_line = ""
+    for line in result.stdout.splitlines():
+        if line.startswith("total:"):
+            total_line = line
+            break
+
+    if not total_line:
+        raise ValueError("Total coverage line not found in go tool output")
+
+    coverage = _parse_go_coverage(total_line)
+    print(f"Coverage: {coverage}%")
+    if coverage < threshold:
+        raise SystemExit(f"Coverage {coverage}% is below threshold {threshold}%")
+    print(f"✅ Coverage {coverage}% meets threshold {threshold}%")
+
+
+def _matrix_entries(
+    versions: list[str], oses: list[str], version_key: str
+) -> list[dict[str, Any]]:
+    matrix: list[dict[str, Any]] = []
+    for os_index, runner in enumerate(oses):
+        for ver_index, version in enumerate(versions):
+            matrix.append(
+                {
+                    "os": runner,
+                    version_key: version,
+                    "primary": os_index == 0 and ver_index == 0,
+                }
+            )
+    return matrix
+
+
+def generate_matrices(_: argparse.Namespace) -> None:
+    fallback_go = os.environ.get("FALLBACK_GO_VERSION", "1.24")
+    fallback_python = os.environ.get("FALLBACK_PYTHON_VERSION", "3.13")
+    fallback_rust = os.environ.get("FALLBACK_RUST_VERSION", "stable")
+    fallback_node = os.environ.get("FALLBACK_NODE_VERSION", "22")
+    fallback_threshold = os.environ.get("FALLBACK_COVERAGE_THRESHOLD", "80")
+
+    versions_config = _config_path({}, "languages", "versions") or {}
+    build_platforms = _config_path({}, "build", "platforms") or {}
+    os_list = build_platforms.get("os") or ["ubuntu-latest"]
+
+    go_versions = versions_config.get("go") or [fallback_go]
+    python_versions = versions_config.get("python") or [fallback_python]
+    rust_versions = versions_config.get("rust") or [fallback_rust]
+    node_versions = versions_config.get("node") or [fallback_node]
+
+    go_matrix = _matrix_entries(go_versions, os_list, "go-version")
+    python_matrix = _matrix_entries(python_versions, os_list, "python-version")
+    rust_matrix = _matrix_entries(rust_versions, os_list, "rust-version")
+    frontend_matrix = _matrix_entries(node_versions, os_list, "node-version")
+
+    write_output("go-matrix", json.dumps({"include": go_matrix}, separators=(",", ":")))
+    write_output("python-matrix", json.dumps({"include": python_matrix}, separators=(",", ":")))
+    write_output("rust-matrix", json.dumps({"include": rust_matrix}, separators=(",", ":")))
+    write_output("frontend-matrix", json.dumps({"include": frontend_matrix}, separators=(",", ":")))
+
+    coverage_threshold = _config_path(fallback_threshold, "testing", "coverage", "threshold")
+    write_output("coverage-threshold", str(coverage_threshold))
