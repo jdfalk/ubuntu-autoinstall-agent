@@ -1,180 +1,354 @@
-import argparse
-import subprocess
+#!/usr/bin/env python3
+# file: tests/workflow_scripts/test_ci_workflow.py
+# version: 1.0.0
+# guid: c3d4e5f6-a7b8-9c0d-1e2f-3a4b5c6d7e8f
+
+"""Unit tests for ci_workflow module."""
+
+from __future__ import annotations
+
+import sys
 from pathlib import Path
-from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
-import ci_workflow
+SCRIPTS_DIR = Path(__file__).resolve().parents[2] / ".github/workflows/scripts"
+sys.path.insert(0, str(SCRIPTS_DIR))
+
+import ci_workflow  # pylint: disable=wrong-import-position
+import workflow_common  # pylint: disable=wrong-import-position
 
 
-def test_debug_filter_outputs(capsys, monkeypatch):
-    env_values = {
-        "CI_GO_FILES": "true",
-        "CI_FRONTEND_FILES": "false",
-        "CI_PYTHON_FILES": "true",
-        "CI_RUST_FILES": "false",
-        "CI_DOCKER_FILES": "false",
-        "CI_DOCS_FILES": "true",
-        "CI_WORKFLOW_FILES": "true",
-        "CI_LINT_FILES": "false",
+@pytest.fixture(autouse=True)
+def reset_config_cache() -> None:
+    """Reset global config cache between tests."""
+    workflow_common._CONFIG_CACHE = None  # type: ignore[attr-defined]
+    yield
+    workflow_common._CONFIG_CACHE = None  # type: ignore[attr-defined]
+
+
+def test_change_detection_dataclass_defaults() -> None:
+    """ChangeDetection initializes with expected default values."""
+    detection = ci_workflow.ChangeDetection()
+
+    assert detection.go_changed is False
+    assert detection.python_changed is False
+    assert detection.all_files == []
+
+
+def test_detect_changes_go_files(monkeypatch: pytest.MonkeyPatch) -> None:
+    """detect_changes marks Go files correctly."""
+    mock_result = MagicMock()
+    mock_result.stdout = "main.go\ngo.mod\n"
+    monkeypatch.setattr(
+        ci_workflow.subprocess,
+        "run",
+        MagicMock(return_value=mock_result),
+    )
+
+    changes = ci_workflow.detect_changes()
+
+    assert changes.go_changed is True
+    assert changes.python_changed is False
+    assert "main.go" in changes.all_files
+
+
+def test_detect_changes_python_files(monkeypatch: pytest.MonkeyPatch) -> None:
+    """detect_changes marks Python files correctly."""
+    mock_result = MagicMock()
+    mock_result.stdout = "script.py\nrequirements.txt\n"
+    monkeypatch.setattr(
+        ci_workflow.subprocess,
+        "run",
+        MagicMock(return_value=mock_result),
+    )
+
+    changes = ci_workflow.detect_changes()
+
+    assert changes.python_changed is True
+    assert changes.go_changed is False
+
+
+def test_detect_changes_workflow_files(monkeypatch: pytest.MonkeyPatch) -> None:
+    """detect_changes marks workflow file updates."""
+    mock_result = MagicMock()
+    mock_result.stdout = ".github/workflows/ci.yml\n"
+    monkeypatch.setattr(
+        ci_workflow.subprocess,
+        "run",
+        MagicMock(return_value=mock_result),
+    )
+
+    changes = ci_workflow.detect_changes()
+
+    assert changes.workflows_changed is True
+
+
+def test_detect_changes_git_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """detect_changes raises WorkflowError when git diff fails."""
+    import subprocess as sp  # Local alias to avoid confusion
+
+    monkeypatch.setattr(
+        ci_workflow.subprocess,
+        "run",
+        MagicMock(side_effect=sp.CalledProcessError(1, "git")),
+    )
+
+    with pytest.raises(workflow_common.WorkflowError) as exc_info:
+        ci_workflow.detect_changes()
+
+    assert "Failed to detect changes" in str(exc_info.value)
+
+
+def test_generate_test_matrix_optimized() -> None:
+    """generate_test_matrix optimizes matrix for latest version."""
+    languages = ["go"]
+    versions = {"go": ["1.23", "1.24"]}
+    platforms = ["ubuntu-latest", "macos-latest"]
+
+    matrix = ci_workflow.generate_test_matrix(
+        languages,
+        versions,
+        platforms,
+        optimize=True,
+        branch_name="main",
+    )
+
+    entries = matrix["include"]
+    assert len(entries) == 3
+
+    latest_entries = [entry for entry in entries if entry["version"] == "1.24"]
+    assert len(latest_entries) == 2
+    assert {entry["os"] for entry in latest_entries} == {
+        "ubuntu-latest",
+        "macos-latest",
     }
-    for key, value in env_values.items():
-        monkeypatch.setenv(key, value)
 
-    ci_workflow.debug_filter(argparse.Namespace())
-    output = capsys.readouterr().out
-    for label in [
-        "Go files changed: true",
-        "Frontend files changed: false",
-        "Python files changed: true",
-        "Docs files changed: true",
-        "Workflow files changed: true",
-    ]:
-        assert label in output
+    older_entries = [entry for entry in entries if entry["version"] == "1.23"]
+    assert len(older_entries) == 1
+    assert older_entries[0]["os"] == "ubuntu-latest"
 
 
-def test_determine_execution_sets_outputs(tmp_path, monkeypatch):
-    output_file = tmp_path / "output.txt"
-    monkeypatch.setenv("GITHUB_OUTPUT", str(output_file))
-    monkeypatch.setenv("GITHUB_HEAD_COMMIT_MESSAGE", "fix bug [skip ci]")
-    monkeypatch.setenv("CI_GO_FILES", "true")
-    monkeypatch.setenv("CI_FRONTEND_FILES", "false")
-    monkeypatch.setenv("CI_PYTHON_FILES", "true")
-    monkeypatch.setenv("CI_RUST_FILES", "false")
-    monkeypatch.setenv("CI_DOCKER_FILES", "true")
+def test_generate_test_matrix_full() -> None:
+    """generate_test_matrix returns full matrix when not optimized."""
+    languages = ["go"]
+    versions = {"go": ["1.23", "1.24"]}
+    platforms = ["ubuntu-latest", "macos-latest"]
 
-    ci_workflow.determine_execution(argparse.Namespace())
-    lines = output_file.read_text().splitlines()
-    assert "skip_ci=true" in lines
-    assert "should_lint=true" in lines
-    assert "should_test_go=true" in lines
-    assert "should_test_frontend=false" in lines
-    assert "should_test_python=true" in lines
-    assert "should_test_docker=true" in lines
+    matrix = ci_workflow.generate_test_matrix(
+        languages,
+        versions,
+        platforms,
+        optimize=False,
+        branch_name="main",
+    )
+
+    assert len(matrix["include"]) == 4
 
 
-class DummyResponse:
-    def __init__(self, status_code: int, payload: dict[str, Any]):
-        self.status_code = status_code
-        self._payload = payload
+def test_generate_test_matrix_multiple_languages() -> None:
+    """generate_test_matrix supports multiple languages."""
+    languages = ["go", "python"]
+    versions = {"go": ["1.24"], "python": ["3.13"]}
+    platforms = ["ubuntu-latest"]
 
-    def json(self) -> dict[str, Any]:
-        return self._payload
+    matrix = ci_workflow.generate_test_matrix(
+        languages,
+        versions,
+        platforms,
+        optimize=False,
+        branch_name="main",
+    )
 
-
-def test_wait_for_pr_automation_completed(monkeypatch, capsys):
-    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
-    monkeypatch.setenv("GITHUB_TOKEN", "token")
-    monkeypatch.setenv("TARGET_SHA", "abc123")
-    monkeypatch.setenv("WORKFLOW_NAME", "PR Automation")
-    monkeypatch.setenv("MAX_ATTEMPTS", "1")
-
-    def fake_get(url: str, **kwargs):
-        assert "owner/repo" in url
-        return DummyResponse(
-            200,
-            {
-                "workflow_runs": [
-                    {"head_sha": "abc123", "name": "PR Automation", "status": "completed"}
-                ]
-            },
-        )
-
-    monkeypatch.setattr(ci_workflow.requests, "get", fake_get)
-    ci_workflow.wait_for_pr_automation(argparse.Namespace())
-    captured = capsys.readouterr().out
-    assert "✅ PR automation has completed" in captured
+    entries = matrix["include"]
+    assert len(entries) == 2
+    assert {entry["language"] for entry in entries} == {"go", "python"}
 
 
-def test_load_super_linter_config(tmp_path, monkeypatch):
+def test_generate_test_matrix_no_versions(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """generate_test_matrix skips languages with no configured versions."""
+    languages = ["go", "unknown"]
+    versions = {"go": ["1.24"]}
+    platforms = ["ubuntu-latest"]
+
+    matrix = ci_workflow.generate_test_matrix(
+        languages,
+        versions,
+        platforms,
+        branch_name="main",
+    )
+
+    captured = capsys.readouterr()
+    assert "No versions configured for unknown" in captured.out
+    assert len(matrix["include"]) == 1
+
+
+def test_should_run_tests_language_changed() -> None:
+    """should_run_tests returns True when language changed."""
+    changes = ci_workflow.ChangeDetection(go_changed=True)
+
+    assert ci_workflow.should_run_tests("go", changes) is True
+
+
+def test_should_run_tests_workflows_changed() -> None:
+    """should_run_tests returns True when workflow files changed."""
+    changes = ci_workflow.ChangeDetection(workflows_changed=True)
+
+    assert ci_workflow.should_run_tests("go", changes) is True
+
+
+def test_should_run_tests_no_changes() -> None:
+    """should_run_tests returns False when language unchanged."""
+    changes = ci_workflow.ChangeDetection(python_changed=True)
+
+    assert ci_workflow.should_run_tests("go", changes) is False
+
+
+def test_get_coverage_threshold_from_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """get_coverage_threshold reads values from config file."""
+    config_file = tmp_path / ".github" / "repository-config.yml"
+    config_file.parent.mkdir(parents=True)
+    config_file.write_text(
+        "testing:\n  coverage:\n    python:\n      threshold: 85.5\n",
+        encoding="utf-8",
+    )
     monkeypatch.chdir(tmp_path)
-    (tmp_path / "super-linter-ci.env").write_text("FOO=bar\n", encoding="utf-8")
-    env_file = tmp_path / "env.txt"
-    output_file = tmp_path / "output.txt"
 
-    monkeypatch.setenv("EVENT_NAME", "push")
-    monkeypatch.setenv("CI_ENV_FILE", "super-linter-ci.env")
-    monkeypatch.setenv("PR_ENV_FILE", "super-linter-pr.env")
-    monkeypatch.setenv("GITHUB_ENV", str(env_file))
-    monkeypatch.setenv("GITHUB_OUTPUT", str(output_file))
+    threshold = ci_workflow.get_coverage_threshold("python")
 
-    ci_workflow.load_super_linter_config(argparse.Namespace())
-    assert env_file.read_text() == "FOO=bar\n"
-    assert "config-file=super-linter-ci.env" in output_file.read_text()
+    assert threshold == 85.5
 
 
-def test_check_go_coverage_success(monkeypatch, tmp_path):
-    coverage_file = tmp_path / "coverage.out"
-    coverage_file.write_text("mode: set\n", encoding="utf-8")
-    html_file = tmp_path / "coverage.html"
+def test_get_coverage_threshold_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """get_coverage_threshold falls back to default value."""
+    config_file = tmp_path / ".github" / "repository-config.yml"
+    config_file.parent.mkdir(parents=True)
+    config_file.write_text("empty: {}\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
 
-    monkeypatch.setenv("COVERAGE_FILE", str(coverage_file))
-    monkeypatch.setenv("COVERAGE_HTML", str(html_file))
-    monkeypatch.setenv("COVERAGE_THRESHOLD", "70")
+    threshold = ci_workflow.get_coverage_threshold("python")
 
-    calls = []
-
-    def fake_run(cmd, check=True, capture_output=False, text=False, **kwargs):
-        calls.append((tuple(cmd), capture_output))
-        if "-func" in cmd:
-            return subprocess.CompletedProcess(cmd, 0, stdout="total: (statements) 75.0%\n")
-        return subprocess.CompletedProcess(cmd, 0)
-
-    monkeypatch.setattr(ci_workflow.shutil, "which", lambda name: "/usr/bin/go")
-    monkeypatch.setattr(ci_workflow, "subprocess", subprocess)
-    monkeypatch.setattr(ci_workflow.subprocess, "run", fake_run)
-
-    ci_workflow.check_go_coverage(argparse.Namespace())
-    assert any("-func" in part for command, _ in calls for part in command)
+    assert threshold == 80.0
 
 
-def test_generate_ci_summary_writes_summary(tmp_path, monkeypatch):
-    summary_path = tmp_path / "summary.md"
-    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_path))
-    monkeypatch.setenv("PRIMARY_LANGUAGE", "python")
-    monkeypatch.setenv("HAS_RUST", "false")
-    monkeypatch.setenv("HAS_GO", "true")
-    monkeypatch.setenv("HAS_PYTHON", "true")
-    monkeypatch.setenv("HAS_FRONTEND", "false")
-    monkeypatch.setenv("HAS_DOCKER", "false")
-    monkeypatch.setenv("JOB_DETECT_CHANGES", "success")
-    monkeypatch.setenv("JOB_DETECT_LANGUAGES", "success")
-    monkeypatch.setenv("JOB_CHECK_OVERRIDES", "success")
-    monkeypatch.setenv("JOB_LINT", "success")
-    monkeypatch.setenv("JOB_TEST_GO", "success")
-    monkeypatch.setenv("JOB_TEST_FRONTEND", "skipped")
-    monkeypatch.setenv("JOB_TEST_PYTHON", "success")
-    monkeypatch.setenv("JOB_TEST_RUST", "skipped")
-    monkeypatch.setenv("JOB_RUST_COVERAGE", "skipped")
-    monkeypatch.setenv("JOB_TEST_DOCKER", "skipped")
-    monkeypatch.setenv("JOB_TEST_DOCS", "success")
-    monkeypatch.setenv("JOB_RELEASE_BUILD", "success")
-    monkeypatch.setenv("JOB_SECURITY_SCAN", "success")
-    monkeypatch.setenv("JOB_PERFORMANCE_TEST", "skipped")
-    monkeypatch.setenv("CI_GO_FILES", "true")
-    monkeypatch.setenv("CI_FRONTEND_FILES", "false")
-    monkeypatch.setenv("CI_PYTHON_FILES", "true")
-    monkeypatch.setenv("CI_RUST_FILES", "false")
-    monkeypatch.setenv("CI_DOCKER_FILES", "false")
-    monkeypatch.setenv("CI_DOCS_FILES", "true")
-    monkeypatch.setenv("CI_WORKFLOW_FILES", "true")
+def test_format_matrix_summary_with_entries() -> None:
+    """format_matrix_summary returns markdown table."""
+    matrix = {
+        "include": [
+            {"language": "go", "version": "1.24", "os": "ubuntu-latest"},
+            {"language": "python", "version": "3.13", "os": "macos-latest"},
+        ]
+    }
 
-    ci_workflow.generate_ci_summary(argparse.Namespace())
-    content = summary_path.read_text()
-    assert "# 🚀 CI Pipeline Summary" in content
-    assert "| Lint | success |" in content
-    assert "- Python: true" in content
+    summary = ci_workflow.format_matrix_summary(matrix)
+
+    assert "## Test Matrix" in summary
+    assert "**Total Jobs**: 2" in summary
+    assert "| go | 1.24 | ubuntu-latest |" in summary
+    assert "| python | 3.13 | macos-latest |" in summary
 
 
-def test_check_ci_status_failure(monkeypatch):
-    monkeypatch.setenv("JOB_LINT", "failure")
-    monkeypatch.setenv("JOB_TEST_GO", "success")
-    monkeypatch.setenv("JOB_TEST_FRONTEND", "success")
-    monkeypatch.setenv("JOB_TEST_PYTHON", "success")
-    monkeypatch.setenv("JOB_TEST_RUST", "success")
-    monkeypatch.setenv("JOB_TEST_DOCKER", "success")
-    monkeypatch.setenv("JOB_RELEASE_BUILD", "success")
+def test_format_matrix_summary_empty() -> None:
+    """format_matrix_summary handles empty matrix."""
+    summary = ci_workflow.format_matrix_summary({"include": []})
 
-    with pytest.raises(SystemExit):
-        ci_workflow.check_ci_status(argparse.Namespace())
+    assert "❌ No tests to run" in summary
+
+
+def test_get_branch_version_target_main_branch() -> None:
+    """get_branch_version_target returns None for main branch."""
+    assert ci_workflow.get_branch_version_target("main", "go") is None
+
+
+def test_get_branch_version_target_stable_branch() -> None:
+    """get_branch_version_target extracts version for stable branch."""
+    result = ci_workflow.get_branch_version_target("stable-1-go-1.23", "go")
+
+    assert result == "1.23"
+
+
+def test_get_branch_version_target_different_language() -> None:
+    """get_branch_version_target returns None for other languages."""
+    result = ci_workflow.get_branch_version_target("stable-1-go-1.23", "python")
+
+    assert result is None
+
+
+def test_get_branch_version_target_python_stable() -> None:
+    """get_branch_version_target handles Python stable branches."""
+    result = ci_workflow.get_branch_version_target(
+        "stable-1-python-3.13",
+        "python",
+    )
+
+    assert result == "3.13"
+
+
+def test_generate_test_matrix_stable_branch() -> None:
+    """generate_test_matrix locks versions on stable branch."""
+    languages = ["go"]
+    versions = {"go": ["1.23", "1.24", "1.25"]}
+    platforms = ["ubuntu-latest", "macos-latest"]
+
+    matrix = ci_workflow.generate_test_matrix(
+        languages,
+        versions,
+        platforms,
+        optimize=True,
+        branch_name="stable-1-go-1.23",
+    )
+
+    entries = matrix["include"]
+    assert len(entries) == 2
+    assert all(entry["version"] == "1.23" for entry in entries)
+    assert {entry["os"] for entry in entries} == {
+        "ubuntu-latest",
+        "macos-latest",
+    }
+
+
+def test_generate_test_matrix_main_branch_uses_latest() -> None:
+    """generate_test_matrix favors latest versions on main branch."""
+    languages = ["go"]
+    versions = {"go": ["1.23", "1.24", "1.25"]}
+    platforms = ["ubuntu-latest"]
+
+    matrix = ci_workflow.generate_test_matrix(
+        languages,
+        versions,
+        platforms,
+        optimize=True,
+        branch_name="main",
+    )
+
+    entries = matrix["include"]
+    assert any(entry["version"] == "1.25" for entry in entries)
+    assert any(entry["version"] == "1.23" for entry in entries)
+    assert any(entry["version"] == "1.24" for entry in entries)
+
+
+def test_generate_test_matrix_invalid_branch_version(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """generate_test_matrix warns when branch version missing."""
+    languages = ["go"]
+    versions = {"go": ["1.24", "1.25"]}
+    platforms = ["ubuntu-latest"]
+
+    matrix = ci_workflow.generate_test_matrix(
+        languages,
+        versions,
+        platforms,
+        branch_name="stable-1-go-1.23",
+    )
+
+    captured = capsys.readouterr()
+    assert "Branch target 1.23 not in configured versions" in captured.out
+    assert len(matrix["include"]) == 0

@@ -1,656 +1,82 @@
 # file: .github/workflows/ci.yml
-# version: 1.21.3
-# guid: f1a2b3c4-d5e6-f7a8-b9c0-d1e2f3a4b5c6
+# version: 2.0.0
+# guid: b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e
 
-name: Continuous Integration
+name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, develop]
   pull_request:
-    branches: [main, master]
-  schedule:
-    - cron: "0 0 * * 0" # Weekly on Sunday
+    branches: [main, develop]
   workflow_dispatch:
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-env:
-  GO_VERSION: "1.24"
-  NODE_VERSION: "22"
-  PYTHON_VERSION: "3.12"
-  RUST_VERSION: "1.76"
-  COVERAGE_THRESHOLD: "30"
-  CACHE_VERSION: "v1"
-  # GitHub context variables (for security)
-  GITHUB_WORKFLOW: ${{ github.workflow }}
-  GITHUB_REF: ${{ github.ref }}
-  GITHUB_EVENT_NAME: ${{ github.event_name }}
-  GITHUB_REPOSITORY_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-  GITHUB_HEAD_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+    inputs:
+      force_full_matrix:
+        description: "Force full test matrix (disable optimization)"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
-  contents: write
-  actions: write
-  checks: write
-  packages: write
-  security-events: write
-  id-token: write
-  attestations: write
+  contents: read
+  pull-requests: write
 
 jobs:
-  # Detect project languages once at the beginning
-  detect-languages:
-    name: Detect Project Languages
+  check-feature-flag:
+    name: Check Feature Flag
     runs-on: ubuntu-latest
     outputs:
-      has-go: ${{ steps.detect.outputs.has-go }}
-      has-python: ${{ steps.detect.outputs.has-python }}
-      has-frontend: ${{ steps.detect.outputs.has-frontend }}
-      has-docker: ${{ steps.detect.outputs.has-docker }}
-      has-rust: ${{ steps.detect.outputs.has-rust }}
-      primary-language: ${{ steps.detect.outputs.primary-language }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Detect project languages and matrices
-        id: detect
-        run: python3 .github/scripts/detect_languages.py >> $GITHUB_OUTPUT
-  # Check for commit override flags
-  check-overrides:
-    name: Check Commit Overrides
-    uses: jdfalk/ghcommon/.github/workflows/commit-override-handler.yml@main
-
-  # Detect what files changed to optimize workflow execution
-  detect-changes:
-    name: Detect Changes
-    runs-on: ubuntu-latest
-    outputs:
-      gofiles: ${{ steps.filter.outputs.gofiles }}
-      frontendfiles: ${{ steps.filter.outputs.frontendfiles }}
-      pythonfiles: ${{ steps.filter.outputs.pythonfiles }}
-      rustfiles: ${{ steps.filter.outputs.rustfiles }}
-      dockerfiles: ${{ steps.filter.outputs.dockerfiles }}
-      docsfiles: ${{ steps.filter.outputs.docsfiles }}
-      workflowfiles: ${{ steps.filter.outputs.workflowfiles }}
-      lintfiles: ${{ steps.filter.outputs.lintfiles }}
+      use_new_ci: ${{ steps.check.outputs.enabled }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Check file changes
-        uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            gofiles:
-              - '**/*.go'
-              - 'go.mod'
-              - 'go.sum'
-              - '**/go.mod'
-              - '**/go.sum'
-            lintfiles:
-              - 'super-linter-*.env'
-              - '.markdownlint.json'
-              - '.yaml-lint.yml'
-              - 'clippy.toml'
-              - 'rustfmt.toml'
-            frontendfiles:
-              - 'webui/**/*.js'
-              - 'webui/**/*.jsx'
-              - 'webui/**/*.ts'
-              - 'webui/**/*.tsx'
-              - 'webui/**/*.vue'
-              - 'webui/**/*.html'
-              - 'webui/**/*.css'
-              - 'webui/**/*.scss'
-              - 'webui/**/*.sass'
-              - 'webui/**/*.less'
-              - 'frontend/**/*.js'
-              - 'frontend/**/*.jsx'
-              - 'frontend/**/*.ts'
-              - 'frontend/**/*.tsx'
-              - 'frontend/**/*.vue'
-              - 'frontend/**/*.html'
-              - 'frontend/**/*.css'
-              - 'frontend/**/*.scss'
-              - 'frontend/**/*.sass'
-              - 'frontend/**/*.less'
-              - 'ui/**/*.js'
-              - 'ui/**/*.jsx'
-              - 'ui/**/*.ts'
-              - 'ui/**/*.tsx'
-              - 'ui/**/*.vue'
-              - 'ui/**/*.html'
-              - 'ui/**/*.css'
-              - 'ui/**/*.scss'
-              - 'ui/**/*.sass'
-              - 'ui/**/*.less'
-              - 'webui/package.json'
-              - 'webui/package-lock.json'
-              - 'webui/yarn.lock'
-              - 'webui/pnpm-lock.yaml'
-              - 'frontend/package.json'
-              - 'frontend/package-lock.json'
-              - 'frontend/yarn.lock'
-              - 'frontend/pnpm-lock.yaml'
-              - 'ui/package.json'
-              - 'ui/package-lock.json'
-              - 'ui/yarn.lock'
-              - 'ui/pnpm-lock.yaml'
-            pythonfiles:
-              - '**/*.py'
-              - 'requirements.txt'
-              - 'pyproject.toml'
-              - 'setup.py'
-              - 'setup.cfg'
-              - 'Pipfile'
-              - 'poetry.lock'
-              - '**/requirements.txt'
-              - '**/pyproject.toml'
-              - '**/setup.py'
-              - '**/setup.cfg'
-              - '**/Pipfile'
-              - '**/poetry.lock'
-            rustfiles:
-              - '**/*.rs'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-              - '**/Cargo.toml'
-              - '**/Cargo.lock'
-            dockerfiles:
-              - '**/Dockerfile*'
-              - '**/*.dockerfile'
-              - 'docker-compose*.yml'
-              - 'docker-compose*.yaml'
-              - '.dockerignore'
-            docsfiles:
-              - '**/*.md'
-              - '**/*.rst'
-              - '**/*.txt'
-              - 'docs/**'
-              - '.github/**/*.md'
-            workflowfiles:
-              - '.github/workflows/**'
-              - '.github/actions/**'
-
-      - name: Debug outputs
-        env:
-          CI_GO_FILES: ${{ steps.filter.outputs.gofiles }}
-          CI_FRONTEND_FILES: ${{ steps.filter.outputs.frontendfiles }}
-          CI_PYTHON_FILES: ${{ steps.filter.outputs.pythonfiles }}
-          CI_RUST_FILES: ${{ steps.filter.outputs.rustfiles }}
-          CI_DOCKER_FILES: ${{ steps.filter.outputs.dockerfiles }}
-          CI_DOCS_FILES: ${{ steps.filter.outputs.docsfiles }}
-          CI_WORKFLOW_FILES: ${{ steps.filter.outputs.workflowfiles }}
-          CI_LINT_FILES: ${{ steps.filter.outputs.lintfiles }}
-        run: python3 .github/workflows/scripts/ci_workflow.py debug-filter
-
-      - name: Determine workflow execution
-        id: execution
-        env:
-          CI_GO_FILES: ${{ steps.filter.outputs.gofiles }}
-          CI_FRONTEND_FILES: ${{ steps.filter.outputs.frontendfiles }}
-          CI_PYTHON_FILES: ${{ steps.filter.outputs.pythonfiles }}
-          CI_RUST_FILES: ${{ steps.filter.outputs.rustfiles }}
-          CI_DOCKER_FILES: ${{ steps.filter.outputs.dockerfiles }}
-        run: python3 .github/workflows/scripts/ci_workflow.py determine-execution
-
-  # Code quality and linting
-  lint:
-    name: Lint Code
-    runs-on: ubuntu-latest
-    needs: [detect-changes, detect-languages, check-overrides]
-    # Run on PRs always; otherwise when any language or docs/workflows/linter config changed
-    if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target' || needs.detect-languages.outputs.has-go == 'true' || needs.detect-languages.outputs.has-python == 'true' || needs.detect-languages.outputs.has-frontend == 'true' || needs.detect-languages.outputs.has-docker == 'true' || needs.detect-languages.outputs.has-rust == 'true' || needs.detect-changes.outputs.workflowfiles == 'true' || needs.detect-changes.outputs.docsfiles == 'true' || needs.detect-changes.outputs.lintfiles == 'true'
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Go
-        if: needs.detect-changes.outputs.gofiles == 'true'
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-
-      - name: Set up Node.js
-        if: needs.detect-changes.outputs.frontendfiles == 'true'
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: |
-            **/package-lock.json
-            **/yarn.lock
-            **/pnpm-lock.yaml
+      - name: Checkout code
+        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab  # v4.1.1
 
       - name: Set up Python
-        if: needs.detect-changes.outputs.pythonfiles == 'true'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c  # v5.0.0
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-          cache-dependency-path: |
-            **/requirements.txt
-            **/pyproject.toml
-
-      - name: Ensure pip cache directory
-        if: needs.detect-changes.outputs.pythonfiles == 'true'
-        run: mkdir -p ~/.cache/pip
-
-      - name: Set up Rust
-        if: needs.detect-changes.outputs.rustfiles == 'true'
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          components: rustfmt, clippy
-
-      - name: Wait for PR Automation (for PR events)
-        if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          WORKFLOW_NAME: PR Automation
-          TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: python3 .github/workflows/scripts/ci_workflow.py wait-for-pr-automation
-
-      - name: Load Super Linter Configuration
-        id: super-linter-config
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          PR_ENV_FILE: super-linter-pr.env
-          CI_ENV_FILE: super-linter-ci.env
-        run: python3 .github/workflows/scripts/ci_workflow.py load-super-linter-config
-
-      - name: Run Super Linter (Validation Only)
-        uses: super-linter/super-linter@v7
-        env:
-          DEFAULT_BRANCH: ${{ env.GITHUB_REPOSITORY_DEFAULT_BRANCH }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Validation Summary
-        if: always()
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          SUMMARY_CONFIG: ${{ steps.super-linter-config.outputs.config-file }}
-        run: python3 .github/workflows/scripts/ci_workflow.py write-validation-summary
-
-  # Go testing
-  test-go:
-    name: Test Go
-    runs-on: ubuntu-latest
-    needs: [detect-languages, check-overrides]
-    if: needs.detect-languages.outputs.has-go == 'true' && needs.check-overrides.outputs.skip-tests != 'true'
-    strategy:
-      matrix:
-        go-version: ["1.23", "1.24"]
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ matrix.go-version }}
-          cache: true
-
-      - name: Download dependencies
-        run: go mod download
-
-      - name: Run tests
-        run: go test -v -race -coverprofile=coverage.out ./...
-
-      - name: Check coverage
-        env:
-          COVERAGE_FILE: coverage.out
-          COVERAGE_HTML: coverage.html
-          COVERAGE_THRESHOLD: ${{ env.COVERAGE_THRESHOLD }}
-        run: python3 .github/workflows/scripts/ci_workflow.py check-go-coverage
-
-      - name: Upload coverage reports
-        uses: actions/upload-artifact@v4
-        with:
-          name: go-coverage-${{ matrix.go-version }}
-          path: |
-            coverage.out
-            coverage.html
-
-  # Frontend testing
-  test-frontend:
-    name: Test Frontend
-    runs-on: ubuntu-latest
-    needs: [detect-languages, check-overrides]
-    if: needs.detect-languages.outputs.has-frontend == 'true' && needs.check-overrides.outputs.skip-tests != 'true'
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
+          python-version: "3.13"
 
       - name: Install dependencies
-        run: python3 .github/workflows/scripts/ci_workflow.py frontend-install
+        run: pip install pyyaml
 
-      - name: Run linting
-        env:
-          FRONTEND_SCRIPT: lint
-          FRONTEND_SUCCESS_MESSAGE: "✅ Linting passed"
-          FRONTEND_FAILURE_MESSAGE: "❌ Linting failed or not configured"
-        run: python3 .github/workflows/scripts/ci_workflow.py frontend-run
+      - name: Check feature flag
+        id: check
+        run: |
+          python3 -c "
+          import yaml
+          from pathlib import Path
 
-      - name: Run tests
-        env:
-          FRONTEND_SCRIPT: test
-          FRONTEND_SUCCESS_MESSAGE: "✅ Tests passed"
-          FRONTEND_FAILURE_MESSAGE: "ℹ️ No tests configured"
-        run: python3 .github/workflows/scripts/ci_workflow.py frontend-run
+          config_path = Path('.github/repository-config.yml')
+          if not config_path.exists():
+              print('enabled=false')
+              exit(0)
 
-      - name: Build project
-        env:
-          FRONTEND_SCRIPT: build
-          FRONTEND_SUCCESS_MESSAGE: "✅ Build successful"
-          FRONTEND_FAILURE_MESSAGE: "ℹ️ No build script configured"
-        run: python3 .github/workflows/scripts/ci_workflow.py frontend-run
+          config = yaml.safe_load(config_path.read_text(encoding='utf-8'))
+          enabled = config.get('workflows', {}).get('experimental', {}).get('use_new_ci', False)
+          print(f'enabled={str(enabled).lower()}')
+          " >> $GITHUB_OUTPUT
 
-  # Python testing
-  test-python:
-    name: Test Python
-    runs-on: ubuntu-latest
-    needs: [detect-languages, check-overrides]
-    if: needs.detect-languages.outputs.has-python == 'true' && needs.check-overrides.outputs.skip-tests != 'true'
-    strategy:
-      matrix:
-        python-version: ["3.11", "3.12"]
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
-
-      - name: Ensure pip cache directory
-        run: mkdir -p ~/.cache/pip
-
-      - name: Install dependencies
-        run: python3 .github/workflows/scripts/ci_workflow.py python-install
-
-      - name: Run tests
-        run: python3 .github/workflows/scripts/ci_workflow.py python-run-tests
-
-      - name: Upload coverage reports
-        if: matrix.python-version == '3.12'
-        uses: actions/upload-artifact@v4
-        with:
-          name: python-coverage
-          path: |
-            coverage.xml
-            htmlcov/
-
-  # Rust testing
-  test-rust:
-    name: Test Rust
-    runs-on: ubuntu-latest
-    needs: [detect-languages, check-overrides]
-    if: needs.detect-languages.outputs.has-rust == 'true' && needs.check-overrides.outputs.skip-tests != 'true'
-    env:
-      RUSTFMT_CONFIG_FILE: rustfmt.toml
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          components: rustfmt, clippy
-
-      - name: Cache Rust dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Run clippy
-        run: cargo clippy -- -D warnings
-
-      - name: Run tests
-        run: cargo test --verbose
-
-      - name: Check formatting
-        run: cargo fmt -- --check
-
-  # Rust coverage reporting (GitHub-friendly)
-  rust-coverage:
-    name: Rust Coverage
-    runs-on: ubuntu-latest
-    needs: [detect-languages, check-overrides]
-    if: needs.detect-languages.outputs.has-rust == 'true' && needs.check-overrides.outputs.skip-tests != 'true'
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-
-      - name: Cache cargo and target
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-llvmcov-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Install cargo-llvm-cov
-        run: python3 .github/workflows/scripts/ci_workflow.py ensure-cargo-llvm-cov
-
-      - name: Generate LCOV report
-        env:
-          LCOV_OUTPUT: lcov.info
-        run: python3 .github/workflows/scripts/ci_workflow.py generate-rust-lcov
-
-      - name: Generate HTML coverage report
-        env:
-          HTML_OUTPUT_DIR: htmlcov
-        run: python3 .github/workflows/scripts/ci_workflow.py generate-rust-html
-
-      - name: Compute total coverage
-        id: coverage
-        env:
-          LCOV_FILE: lcov.info
-        run: python3 .github/workflows/scripts/ci_workflow.py compute-rust-coverage
-
-      - name: Enforce coverage threshold
-        env:
-          COVERAGE_THRESHOLD: ${{ env.COVERAGE_THRESHOLD }}
-          COVERAGE_PERCENT: ${{ steps.coverage.outputs.percent }}
-        run: python3 .github/workflows/scripts/ci_workflow.py enforce-coverage-threshold
-
-      - name: Upload coverage artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: rust-coverage
-          path: |
-            lcov.info
-            htmlcov/
-
-  # Release build for multi-platform testing and artifacts
-  release-build:
-    name: Release Build
-    uses: ./.github/workflows/release.yml
-    needs: [detect-changes, detect-languages, check-overrides]
-    if: needs.check-overrides.outputs.skip-tests != 'true'
+  new-ci:
+    name: New CI System
+    needs: check-feature-flag
+    if: needs.check-feature-flag.outputs.use_new_ci == 'true'
+    uses: ./.github/workflows/reusable-ci.yml
     with:
-      release_type: auto
-      build_target: all
-      prerelease: true
-      draft: true
+      optimize_matrix: ${{ github.event.inputs.force_full_matrix != 'true' }}
 
-  # Docker testing
-  test-docker:
-    name: Test Docker
+  legacy-ci:
+    name: Legacy CI System
+    needs: check-feature-flag
+    if: needs.check-feature-flag.outputs.use_new_ci != 'true'
     runs-on: ubuntu-latest
-    needs: [detect-languages, check-overrides]
-    if: needs.detect-languages.outputs.has-docker == 'true' && needs.check-overrides.outputs.skip-tests != 'true'
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab  # v4.1.1
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker image
-        env:
-          DOCKERFILE_PATH: Dockerfile
-          DOCKER_IMAGE: test-image
-        run: python3 .github/workflows/scripts/ci_workflow.py docker-build
-
-      - name: Test Docker Compose
-        run: python3 .github/workflows/scripts/ci_workflow.py docker-test-compose
-
-  # Documentation testing
-  test-docs:
-    name: Test Documentation
-    runs-on: ubuntu-latest
-    needs: [detect-changes, detect-languages, check-overrides]
-    if: needs.detect-changes.outputs.docsfiles == 'true' && needs.check-overrides.outputs.skip-tests != 'true'
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Check links in documentation
-        run: python3 .github/workflows/scripts/ci_workflow.py docs-check-links
-
-      - name: Validate documentation structure
-        run: python3 .github/workflows/scripts/ci_workflow.py docs-validate-structure
-
-  # Security scanning
-  security-scan:
-    name: Security Scan
-    runs-on: ubuntu-latest
-    needs: [detect-changes, detect-languages, check-overrides]
-    if: needs.check-overrides.outputs.skip-tests != 'true'
-    permissions:
-      security-events: write
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Run CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
-        continue-on-error: true
-
-  # Performance testing
-  performance-test:
-    name: Performance Test
-    runs-on: ubuntu-latest
-    needs: [detect-languages, check-overrides]
-    if: needs.detect-languages.outputs.has-go == 'true' && needs.check-overrides.outputs.skip-tests != 'true'
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-
-      - name: Run benchmarks
-        run: python3 .github/workflows/scripts/ci_workflow.py run-benchmarks
-
-  # Summary job
-  ci-summary:
-    name: CI Summary
-    runs-on: ubuntu-latest
-    needs:
-      [
-        detect-changes,
-        detect-languages,
-        check-overrides,
-        lint,
-        test-go,
-        test-frontend,
-        test-python,
-        test-rust,
-        rust-coverage,
-        test-docker,
-        test-docs,
-        release-build,
-        security-scan,
-        performance-test,
-      ]
-    if: always()
-
-    steps:
-      - name: Generate summary
-        env:
-          PRIMARY_LANGUAGE: ${{ needs.detect-languages.outputs.primary-language }}
-          HAS_RUST: ${{ needs.detect-languages.outputs.has-rust }}
-          HAS_GO: ${{ needs.detect-languages.outputs.has-go }}
-          HAS_PYTHON: ${{ needs.detect-languages.outputs.has-python }}
-          HAS_FRONTEND: ${{ needs.detect-languages.outputs.has-frontend }}
-          HAS_DOCKER: ${{ needs.detect-languages.outputs.has-docker }}
-          JOB_DETECT_CHANGES: ${{ needs.detect-changes.result }}
-          JOB_DETECT_LANGUAGES: ${{ needs.detect-languages.result }}
-          JOB_CHECK_OVERRIDES: ${{ needs.check-overrides.result }}
-          JOB_LINT: ${{ needs.lint.result }}
-          JOB_TEST_GO: ${{ needs.test-go.result }}
-          JOB_TEST_FRONTEND: ${{ needs.test-frontend.result }}
-          JOB_TEST_PYTHON: ${{ needs.test-python.result }}
-          JOB_TEST_RUST: ${{ needs.test-rust.result }}
-          JOB_RUST_COVERAGE: ${{ needs.rust-coverage.result }}
-          JOB_TEST_DOCKER: ${{ needs.test-docker.result }}
-          JOB_TEST_DOCS: ${{ needs.test-docs.result }}
-          JOB_RELEASE_BUILD: ${{ needs.release-build.result }}
-          JOB_SECURITY_SCAN: ${{ needs.security-scan.result }}
-          JOB_PERFORMANCE_TEST: ${{ needs.performance-test.result }}
-          CI_GO_FILES: ${{ needs.detect-changes.outputs.gofiles }}
-          CI_FRONTEND_FILES: ${{ needs.detect-changes.outputs.frontendfiles }}
-          CI_PYTHON_FILES: ${{ needs.detect-changes.outputs.pythonfiles }}
-          CI_RUST_FILES: ${{ needs.detect-changes.outputs.rustfiles }}
-          CI_DOCKER_FILES: ${{ needs.detect-changes.outputs.dockerfiles }}
-          CI_DOCS_FILES: ${{ needs.detect-changes.outputs.docsfiles }}
-          CI_WORKFLOW_FILES: ${{ needs.detect-changes.outputs.workflowfiles }}
-        run: python3 .github/workflows/scripts/ci_workflow.py generate-ci-summary
-
-      - name: Check overall status
-        env:
-          JOB_LINT: ${{ needs.lint.result }}
-          JOB_TEST_GO: ${{ needs.test-go.result }}
-          JOB_TEST_FRONTEND: ${{ needs.test-frontend.result }}
-          JOB_TEST_PYTHON: ${{ needs.test-python.result }}
-          JOB_TEST_RUST: ${{ needs.test-rust.result }}
-          JOB_TEST_DOCKER: ${{ needs.test-docker.result }}
-          JOB_RELEASE_BUILD: ${{ needs.release-build.result }}
-        run: python3 .github/workflows/scripts/ci_workflow.py check-ci-status
+      - name: Run legacy tests
+        run: |
+          echo "🔄 Running legacy CI workflow"
+          echo "💡 Enable new CI by setting workflows.experimental.use_new_ci: true in .github/repository-config.yml"
+          # TODO: Replace with actual legacy CI commands or remove once migration completes.

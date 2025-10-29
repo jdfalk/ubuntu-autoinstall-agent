@@ -1,0 +1,134 @@
+# file: .github/workflows/reusable-ci.yml
+# version: 1.0.0
+# guid: a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d
+
+name: Reusable CI Workflow
+
+on:
+  workflow_call:
+    inputs:
+      base_ref:
+        description: "Base git reference for change detection"
+        type: string
+        required: false
+        default: "origin/main"
+      optimize_matrix:
+        description: "Optimize test matrix to reduce job count"
+        type: boolean
+        required: false
+        default: true
+      coverage_threshold:
+        description: "Minimum coverage percentage (overrides config)"
+        type: number
+        required: false
+        default: 0
+    outputs:
+      matrix:
+        description: "Generated test matrix JSON"
+        value: ${{ jobs.generate-matrix.outputs.matrix }}
+      has_tests:
+        description: "True if tests should run"
+        value: ${{ jobs.generate-matrix.outputs.has_tests }}
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  generate-matrix:
+    name: Generate Test Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.generate.outputs.matrix }}
+      has_tests: ${{ steps.generate.outputs.has_tests }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab  # v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c  # v5.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          pip install pyyaml jsonschema
+
+      - name: Generate test matrix
+        id: generate
+        run: |
+          python3 .github/workflows/scripts/ci_workflow.py \
+            --base-ref "${{ inputs.base_ref }}" \
+            ${{ inputs.optimize_matrix && '--optimize' || '' }} \
+            --output-matrix
+
+  run-tests:
+    name: Test ${{ matrix.language }} ${{ matrix.version }} on ${{ matrix.os }}
+    needs: generate-matrix
+    if: needs.generate-matrix.outputs.has_tests == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.generate-matrix.outputs.matrix) }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab  # v4.1.1
+
+      - name: Set up Go
+        if: matrix.language == 'go'
+        uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491  # v5.0.0
+        with:
+          go-version: ${{ matrix.version }}
+
+      - name: Run Go tests
+        if: matrix.language == 'go'
+        run: |
+          go test -v -race -coverprofile=coverage.out ./...
+          go tool cover -func=coverage.out
+
+      - name: Set up Python
+        if: matrix.language == 'python'
+        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c  # v5.0.0
+        with:
+          python-version: ${{ matrix.version }}
+
+      - name: Run Python tests
+        if: matrix.language == 'python'
+        run: |
+          pip install pytest pytest-cov
+          pytest --cov --cov-report=term-missing
+
+      - name: Set up Rust
+        if: matrix.language == 'rust'
+        uses: actions-rust-lang/setup-rust-toolchain@1fbea72663f6d4c03efaab13560c8a24cfd2a7cc  # v1.8.0
+        with:
+          toolchain: ${{ matrix.version }}
+
+      - name: Run Rust tests
+        if: matrix.language == 'rust'
+        run: |
+          cargo test --all-features
+          cargo tarpaulin --out Lcov
+
+      - name: Set up Node.js
+        if: matrix.language == 'node'
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8  # v4.0.2
+        with:
+          node-version: ${{ matrix.version }}
+
+      - name: Run Node.js tests
+        if: matrix.language == 'node'
+        run: |
+          npm ci
+          npm test -- --coverage
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@e0b68c6749509c5f83f984dd99a76a1c1a231044  # v4.0.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          file: ./coverage.out
+          flags: ${{ matrix.language }}-${{ matrix.version }}-${{ matrix.os }}

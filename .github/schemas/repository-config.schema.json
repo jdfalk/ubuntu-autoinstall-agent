@@ -1,0 +1,138 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Repository Configuration Schema",
+  "description": "Configuration schema for ghcommon workflow system",
+  "type": "object",
+  "properties": {
+    "languages": {
+      "type": "object",
+      "properties": {
+        "versions": {
+          "type": "object",
+          "properties": {
+            "go": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^1\\.(23|24)$"
+              },
+              "minItems": 1,
+              "maxItems": 2,
+              "description": "Supported Go versions (1.23, 1.24)"
+            },
+            "python": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^3\\.(13|14)$"
+              },
+              "minItems": 1,
+              "maxItems": 2,
+              "description": "Supported Python versions (3.13, 3.14)"
+            },
+            "node": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^(20|22)$"
+              },
+              "minItems": 1,
+              "maxItems": 2,
+              "description": "Supported Node.js LTS versions (20, 22)"
+            },
+            "rust": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "stable",
+                  "stable-1"
+                ]
+              },
+              "minItems": 1,
+              "maxItems": 2,
+              "description": "Supported Rust channels"
+            }
+          }
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "properties": {
+        "platforms": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "ubuntu-latest",
+              "macos-latest"
+            ]
+          },
+          "minItems": 1,
+          "description": "Build platforms (NO WINDOWS)"
+        }
+      }
+    },
+    "testing": {
+      "type": "object",
+      "properties": {
+        "coverage": {
+          "type": "object",
+          "description": "Coverage thresholds by language",
+          "patternProperties": {
+            "^[a-z0-9_-]+$": {
+              "type": "object",
+              "properties": {
+                "threshold": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100,
+                  "description": "Minimum coverage percentage"
+                },
+                "format": {
+                  "type": "string",
+                  "enum": [
+                    "lcov",
+                    "cobertura",
+                    "json"
+                  ],
+                  "description": "Coverage report format"
+                }
+              },
+              "required": [
+                "threshold"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "workflows": {
+      "type": "object",
+      "properties": {
+        "experimental": {
+          "type": "object",
+          "properties": {
+            "use_new_ci": {
+              "type": "boolean"
+            },
+            "use_new_release": {
+              "type": "boolean"
+            },
+            "use_config_matrices": {
+              "type": "boolean"
+            }
+          },
+          "description": "Feature flags for gradual rollout"
+        }
+      }
+    }
+  },
+  "required": [
+    "languages",
+    "build"
+  ]
+}
