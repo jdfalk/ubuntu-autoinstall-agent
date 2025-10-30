@@ -1,105 +1,91 @@
 # file: .github/workflows/release.yml
-# version: 5.2.1
-# guid: f1a2b3c4-d5e6-7f8a-9b0c-1d2e3f4a5b6c
+# version: 2.0.0
+# guid: a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d
 
-name: Release Coordinator
+name: Release
 
 on:
   push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main, develop]
-  workflow_call:
-    inputs:
-      release_type:
-        description: "Release type (auto, major, minor, patch)"
-        required: false
-        type: string
-        default: auto
-      build_target:
-        description: "Build target (all, go, python, frontend, docker, protobuf, rust)"
-        required: false
-        type: string
-        default: all
-      prerelease:
-        required: false
-        type: boolean
-        default: false
-      draft:
-        required: false
-        type: boolean
-        default: false
-      skip_language_detection:
-        description: "Skip automatic language detection"
-        required: false
-        type: boolean
-        default: false
-    outputs:
-      release-created:
-        description: "Whether a release was created"
-        value: ${{ jobs.release.outputs.release-created }}
-      release-tag:
-        description: "The release tag that was created"
-        value: ${{ jobs.release.outputs.release-tag }}
-      primary-language:
-        description: "The primary language detected"
-        value: ${{ jobs.release.outputs.primary-language }}
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
-      release_type:
-        description: "Release type (auto, major, minor, patch)"
+      version:
+        description: "Version to release (e.g., 1.2.3)"
         required: false
-        default: "auto"
-        type: choice
-        options:
-          - auto
-          - major
-          - minor
-          - patch
-      build_target:
-        description: "Build target"
-        required: false
-        default: "rust"
-        type: choice
-        options:
-          - all
-          - go
-          - python
-          - frontend
-          - docker
-          - protobuf
-          - rust
-      prerelease:
-        description: "Create as prerelease"
-        required: false
-        default: false
-        type: boolean
       draft:
-        description: "Create as draft"
+        description: "Create draft release"
+        type: boolean
         required: false
         default: false
+      prerelease:
+        description: "Mark as prerelease"
         type: boolean
-      skip_language_detection:
-        description: "Skip automatic language detection"
         required: false
         default: false
-        type: boolean
 
 permissions:
   contents: write
   packages: write
-  attestations: write
-  id-token: write
-  security-events: write
 
 jobs:
-  release:
-    name: Ubuntu Autoinstall Agent Release
-    uses: jdfalk/ghcommon/.github/workflows/reusable-release.yml@main
-    with:
-      release-type: ${{ inputs.release_type || 'auto' }}
-      build-target: ${{ inputs.build_target || 'all' }}
-      prerelease: ${{ inputs.prerelease || false }}
-      draft: ${{ inputs.draft || false }}
-      skip-language-detection: ${{ inputs.skip_language_detection || false }}
+  check-feature-flag:
+    name: Check Feature Flag
+    runs-on: ubuntu-latest
+    outputs:
+      use_new_release: ${{ steps.check.outputs.enabled }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab  # v4.1.1
+
+      - name: Set up Python
+        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c  # v5.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Check feature flag
+        id: check
+        run: |
+          python3 -c "
+          import yaml
+          from pathlib import Path
+
+          config_path = Path('.github/repository-config.yml')
+          if not config_path.exists():
+              print('enabled=false')
+              exit(0)
+
+          config = yaml.safe_load(config_path.read_text())
+          enabled = config.get('workflows', {}).get('experimental', {}).get('use_new_release', False)
+          print(f'enabled={str(enabled).lower()}')
+          " >> "$GITHUB_OUTPUT"
+
+  new-release:
+    name: New Release System
+    needs: check-feature-flag
+    if: needs.check-feature-flag.outputs.use_new_release == 'true'
+    uses: ./.github/workflows/reusable-release.yml
     secrets: inherit
+    with:
+      version: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || '' }}
+      draft: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.draft == 'true' || false }}
+      prerelease: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.prerelease == 'true' || false }}
+
+  legacy-release:
+    name: Legacy Release System
+    needs: check-feature-flag
+    if: needs.check-feature-flag.outputs.use_new_release != 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab  # v4.1.1
+
+      - name: Run legacy release
+        run: |
+          echo "🔄 Running legacy release workflow"
+          echo "💡 Enable new release system by setting workflows.experimental.use_new_release: true in .github/repository-config.yml"

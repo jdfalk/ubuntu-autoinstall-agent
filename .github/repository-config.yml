@@ -1,0 +1,44 @@
+# file: .github/repository-config.yml
+# version: 1.0.0
+# guid: d2f4a5b6-c7d8-49e0-a1b2-3456c7890def
+
+languages:
+  versions:
+    go:
+      - "1.23"
+      - "1.24"
+    python:
+      - "3.13"
+      - "3.14"
+    node:
+      - "20"
+      - "22"
+    rust:
+      - "stable"
+      - "stable-1"
+
+build:
+  platforms:
+    - ubuntu-latest
+    - macos-latest
+
+testing:
+  coverage:
+    rust:
+      threshold: 80
+      format: lcov
+    python:
+      threshold: 80
+      format: cobertura
+
+workflows:
+  experimental:
+    use_new_ci: true
+    use_new_release: true
+    use_config_matrices: true
+packages:
+  registries:
+    github: true
+    pypi: false
+    npm: false
+    cargo: false

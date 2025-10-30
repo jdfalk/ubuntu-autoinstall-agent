@@ -1,0 +1,278 @@
+# file: .github/workflows/reusable-release.yml
+# version: 1.0.0
+# guid: f6a7b8c9-d0e1-2f3a-4b5c6d7e8f9a0b1c
+
+name: Reusable Release Workflow
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "Version override (default: extract from config)"
+        type: string
+        required: false
+      draft:
+        description: "Create draft release"
+        type: boolean
+        required: false
+        default: false
+      prerelease:
+        description: "Mark as prerelease"
+        type: boolean
+        required: false
+        default: false
+    outputs:
+      tag:
+        description: "Generated release tag"
+        value: ${{ jobs.prepare-release.outputs.tag }}
+      version:
+        description: "Release version"
+        value: ${{ jobs.prepare-release.outputs.version }}
+      language:
+        description: "Detected primary language"
+        value: ${{ jobs.prepare-release.outputs.language }}
+
+permissions:
+  contents: write
+  packages: write
+  pull-requests: read
+
+jobs:
+  prepare-release:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release-info.outputs.tag }}
+      version: ${{ steps.release-info.outputs.version }}
+      language: ${{ steps.release-info.outputs.language }}
+      branch: ${{ steps.release-info.outputs.branch }}
+      is_stable: ${{ steps.release-info.outputs.is_stable }}
+      changelog: ${{ steps.release-info.outputs.changelog }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab  # v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c  # v5.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Generate release info
+        id: release-info
+        run: |
+          set -eo pipefail
+          VERSION_ARG=""
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION_ARG="--version ${{ inputs.version }}"
+          fi
+          python3 .github/workflows/scripts/release_workflow.py \
+            ${VERSION_ARG} \
+            --output \
+            --generate-changelog
+
+      - name: Display release info
+        run: |
+          echo "🏷️  Tag: ${{ steps.release-info.outputs.tag }}"
+          echo "📦 Version: ${{ steps.release-info.outputs.version }}"
+          echo "💻 Language: ${{ steps.release-info.outputs.language }}"
+          echo "🌿 Branch: ${{ steps.release-info.outputs.branch }}"
+          echo "🔒 Stable: ${{ steps.release-info.outputs.is_stable }}"
+
+  build-go:
+    name: Build Go Artifacts
+    needs: prepare-release
+    if: needs.prepare-release.outputs.language == 'go'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+          - os: ubuntu-latest
+            goos: linux
+            goarch: arm64
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab  # v4.1.1
+
+      - name: Set up Go
+        uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491  # v5.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          output_name="app-${{ matrix.goos }}-${{ matrix.goarch }}"
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            output_name="${output_name}.exe"
+          fi
+          go build -v -o "${output_name}" .
+          chmod +x "${output_name}" || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8  # v4.3.0
+        with:
+          name: go-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: app-${{ matrix.goos }}-${{ matrix.goarch }}*
+
+  build-rust:
+    name: Build Rust Artifacts
+    needs: prepare-release
+    if: needs.prepare-release.outputs.language == 'rust'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: macos-latest
+            target: aarch64-apple-darwin
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab  # v4.1.1
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@1fbea72663f6d4c03efaab13560c8a24cfd2a7cc  # v1.8.0
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+
+      - name: Build binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8  # v4.3.0
+        with:
+          name: rust-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/app
+
+  build-python:
+    name: Build Python Package
+    needs: prepare-release
+    if: needs.prepare-release.outputs.language == 'python'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab  # v4.1.1
+
+      - name: Set up Python
+        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c  # v5.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Install build tools
+        run: pip install build wheel
+
+      - name: Build package
+        run: python -m build
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8  # v4.3.0
+        with:
+          name: python-dist
+          path: dist/*
+
+  build-node:
+    name: Build Node.js Package
+    needs: prepare-release
+    if: needs.prepare-release.outputs.language == 'node'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab  # v4.1.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8  # v4.0.2
+        with:
+          node-version-file: package.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build package
+        run: npm run build || echo "No build script"
+
+      - name: Pack package
+        run: npm pack
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8  # v4.3.0
+        with:
+          name: node-package
+          path: "*.tgz"
+
+  create-release:
+    name: Create GitHub Release
+    needs:
+      - prepare-release
+      - build-go
+      - build-rust
+      - build-python
+      - build-node
+    if: always() && needs.prepare-release.result == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab  # v4.1.1
+
+      - name: Download artifacts
+        uses: actions/download-artifact@6b208ae046db98c579e8a3aa621ab581ff575935  # v4.1.1
+        with:
+          path: artifacts
+
+      - name: Create release
+        uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191  # v0.1.15
+        with:
+          tag_name: ${{ needs.prepare-release.outputs.tag }}
+          name: Release ${{ needs.prepare-release.outputs.tag }}
+          body: ${{ needs.prepare-release.outputs.changelog }}
+          draft: ${{ inputs.draft }}
+          prerelease: ${{ inputs.prerelease }}
+          files: artifacts/**/*
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-packages:
+    name: Publish to GitHub Packages
+    needs:
+      - prepare-release
+      - create-release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab  # v4.1.1
+
+      - name: Publish package
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "📦 Publishing ${{ needs.prepare-release.outputs.language }} package"
+          echo "🏷️  Tag: ${{ needs.prepare-release.outputs.tag }}"
+          echo "🌿 Branch: ${{ needs.prepare-release.outputs.branch }}"
+          echo "🔒 Stable: ${{ needs.prepare-release.outputs.is_stable }}"
+          echo "ℹ️  Placeholder for package publishing commands"
