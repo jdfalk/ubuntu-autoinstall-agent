@@ -6,7 +6,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-
 CONFIG_TEMPLATE = """[registries.github]
 index = "sparse+https://api.github.com/{repository}/cargo/"
 

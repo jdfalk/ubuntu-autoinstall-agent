@@ -7,10 +7,10 @@
 
 from __future__ import annotations
 
-import re
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+import re
+import subprocess
 from typing import Optional
 
 import workflow_common

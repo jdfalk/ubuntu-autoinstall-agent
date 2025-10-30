@@ -8,9 +8,9 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import subprocess
 import sys
-from pathlib import Path
 
 import pytest
 
@@ -26,8 +26,7 @@ import ci_workflow  # pylint: disable=wrong-import-position
 def test_ci_workflow_end_to_end(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """
-    Validate CI workflow from change detection to matrix generation.
+    """Validate CI workflow from change detection to matrix generation.
 
     Ensures the system:
         1. Detects file changes in a git repository

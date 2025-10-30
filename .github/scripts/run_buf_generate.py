@@ -5,6 +5,7 @@
 """Run buf generate with basic safety checks and clearer logging."""
 
 from __future__ import annotations
+
 import os
 import subprocess
 import sys
@@ -15,7 +16,7 @@ def main() -> int:
         print("No buf.gen.yaml found, skipping generation")
         return 0
     print("Running buf generate...")
-    proc = subprocess.run(["buf", "generate"], text=True)
+    proc = subprocess.run(["buf", "generate"], check=False, text=True)
     if proc.returncode != 0:
         print("buf generate failed", file=sys.stderr)
         return proc.returncode

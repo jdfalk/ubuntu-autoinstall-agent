@@ -5,10 +5,10 @@ from __future__ import annotations
 
 import argparse
 import os
+from pathlib import Path
 import shutil
 import subprocess
 import time
-from pathlib import Path
 
 
 def append_to_file(path_env: str, content: str) -> None:
@@ -85,7 +85,7 @@ def sync_files(_: argparse.Namespace) -> None:
             print(f"- {path.name}")
 
     command = ["python3", ".github/scripts/sync-receiver-sync-files.py", sync_type]
-    result = subprocess.run(command)
+    result = subprocess.run(command, check=False)
     if result.returncode == 0:
         return
 

@@ -3,8 +3,7 @@
 # version: 1.0.0
 # guid: f6a7b8c9-d0e1-2f3a-4b5c-6d7e8f9a0b1c
 
-"""
-Validate repository-config.yml against JSON schema.
+"""Validate repository-config.yml against JSON schema.
 
 Usage:
     python validate_config.py [--schema PATH] [--config PATH]
@@ -14,16 +13,15 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
-
-import yaml
+import sys
 
 import workflow_common
+import yaml
 
 try:
     from jsonschema import ValidationError, validate
-except ImportError as error:  # pragma: no cover - smoke test via handle_error
+except ImportError:  # pragma: no cover - smoke test via handle_error
     workflow_common.handle_error(
         workflow_common.WorkflowError(
             "jsonschema package not installed",

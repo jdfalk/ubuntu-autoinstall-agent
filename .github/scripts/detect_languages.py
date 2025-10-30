@@ -5,6 +5,7 @@
 """Detect project languages and emit key=value lines for GitHub Actions outputs."""
 
 from __future__ import annotations
+
 import json
 import os
 

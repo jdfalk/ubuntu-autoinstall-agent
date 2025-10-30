@@ -7,11 +7,11 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import os
+from pathlib import Path
 import sys
 import time
-from contextlib import contextmanager
-from pathlib import Path
 from typing import Any
 
 import yaml

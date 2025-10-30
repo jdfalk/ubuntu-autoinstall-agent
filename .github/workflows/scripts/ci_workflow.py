@@ -3,8 +3,7 @@
 # version: 1.0.0
 # guid: f6a7b8c9-d0e1-2f3a-4b5c-6d7e8f9a0b1c
 
-"""
-CI workflow helper functions for matrix generation and change detection.
+"""CI workflow helper functions for matrix generation and change detection.
 
 This module provides functions to generate optimized test matrices based on
 repository configuration and detected file changes, reducing unnecessary CI jobs.
@@ -12,9 +11,9 @@ repository configuration and detected file changes, reducing unnecessary CI jobs
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 import subprocess
-from dataclasses import dataclass
 from typing import Any
 
 import workflow_common
@@ -22,8 +21,7 @@ import workflow_common
 
 @dataclass
 class ChangeDetection:
-    """
-    Detected file changes and affected languages.
+    """Detected file changes and affected languages.
 
     Attributes:
         go_changed: True if Go files changed
@@ -55,8 +53,7 @@ def detect_changes(
     base_ref: str = "origin/main",
     head_ref: str = "HEAD",
 ) -> ChangeDetection:
-    """
-    Detect changed files and determine affected languages.
+    """Detect changed files and determine affected languages.
 
     Args:
         base_ref: Base git reference for comparison
@@ -118,8 +115,7 @@ def detect_changes(
 
 
 def get_branch_version_target(branch_name: str, language: str) -> str | None:
-    """
-    Determine target language version based on branch name.
+    """Determine target language version based on branch name.
 
     Implements parallel release track strategy:
     - main branch: uses latest version from config
@@ -290,8 +286,7 @@ def format_matrix_summary(matrix: dict[str, Any]) -> str:
 
 
 def main() -> None:
-    """
-    Main entry point for CI workflow helper.
+    """Main entry point for CI workflow helper.
 
     Detects changes, generates test matrix, and outputs results for GitHub
     Actions workflow consumption.

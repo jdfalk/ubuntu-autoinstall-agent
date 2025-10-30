@@ -1,11 +1,10 @@
 import json
-from pathlib import Path
 
+import configure_cargo_registry
+import detect_frontend_package
 import intelligent_labeling
 import load_repository_config
 import parse_protobuf_config
-import configure_cargo_registry
-import detect_frontend_package
 import write_go_module_metadata
 import write_pypirc
 
